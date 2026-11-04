@@ -1,0 +1,229 @@
+package com.notecraft.util
+
+import com.notecraft.model.Page
+import com.notecraft.model.Pt
+import com.notecraft.model.ShapeType
+import com.notecraft.model.Stroke
+import com.notecraft.model.TextItem
+import com.notecraft.model.ToolType
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+
+data class Bounds(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+) {
+    val width: Float get() = right - left
+    val height: Float get() = bottom - top
+    val centerX: Float get() = (left + right) / 2f
+    val centerY: Float get() = (top + bottom) / 2f
+    val center: Pt get() = Pt(centerX, centerY)
+
+    fun expand(amount: Float): Bounds = Bounds(
+        left - amount,
+        top - amount,
+        right + amount,
+        bottom + amount,
+    )
+
+    fun contains(x: Float, y: Float): Boolean =
+        x in left..right && y in top..bottom
+
+    fun intersects(other: Bounds): Boolean =
+        left <= other.right && right >= other.left && top <= other.bottom && bottom >= other.top
+
+    companion object {
+        fun fromPoints(points: List<Pt>): Bounds? {
+            if (points.isEmpty()) return null
+            var left = Float.POSITIVE_INFINITY
+            var top = Float.POSITIVE_INFINITY
+            var right = Float.NEGATIVE_INFINITY
+            var bottom = Float.NEGATIVE_INFINITY
+            points.forEach { point ->
+                left = min(left, point.x)
+                top = min(top, point.y)
+                right = max(right, point.x)
+                bottom = max(bottom, point.y)
+            }
+            return Bounds(left, top, right, bottom)
+        }
+
+        fun combine(a: Bounds?, b: Bounds?): Bounds? = when {
+            a == null -> b
+            b == null -> a
+            else -> Bounds(min(a.left, b.left), min(a.top, b.top), max(a.right, b.right), max(a.bottom, b.bottom))
+        }
+    }
+}
+
+fun distancePointToSegment(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float): Float {
+    val dx = bx - ax
+    val dy = by - ay
+    val lengthSquared = dx * dx + dy * dy
+    if (lengthSquared <= 0.0001f) return hypot(px - ax, py - ay)
+    var t = ((px - ax) * dx + (py - ay) * dy) / lengthSquared
+    t = t.coerceIn(0f, 1f)
+    return hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+fun Stroke.bounds(): Bounds? {
+    if (points.isEmpty()) return null
+    if (tool == ToolType.SHAPE && shapeType != null && points.size >= 2) {
+        val start = points.first()
+        val end = points.last()
+        if (shapeType == ShapeType.RECTANGLE || shapeType == ShapeType.ELLIPSE) {
+            return Bounds(
+                min(start.x, end.x),
+                min(start.y, end.y),
+                max(start.x, end.x),
+                max(start.y, end.y),
+            )
+        }
+    }
+    return Bounds.fromPoints(points)
+}
+
+/** True when [x], [y] is close enough to this stroke to be erased. */
+fun Stroke.hitTest(x: Float, y: Float, extraRadius: Float): Boolean {
+    val threshold = width / 2f + extraRadius
+    if (tool == ToolType.SHAPE && shapeType != null) {
+        return shapeHitTest(x, y, threshold)
+    }
+    if (points.size == 1) {
+        val point = points.first()
+        return hypot(x - point.x, y - point.y) <= threshold
+    }
+    points.forEachIndexed { index, point ->
+        if (index == 0) {
+            if (hypot(x - point.x, y - point.y) <= threshold) return true
+        } else {
+            val previous = points[index - 1]
+            if (distancePointToSegment(x, y, previous.x, previous.y, point.x, point.y) <= threshold) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+private fun Stroke.shapeHitTest(x: Float, y: Float, threshold: Float): Boolean {
+    val start = points.firstOrNull() ?: return false
+    val end = points.lastOrNull() ?: start
+    if (points.size < 2) return hypot(x - start.x, y - start.y) <= threshold
+    return when (shapeType) {
+        ShapeType.LINE, ShapeType.ARROW ->
+            distancePointToSegment(x, y, start.x, start.y, end.x, end.y) <= threshold
+
+        ShapeType.RECTANGLE -> {
+            val left = min(start.x, end.x)
+            val top = min(start.y, end.y)
+            val right = max(start.x, end.x)
+            val bottom = max(start.y, end.y)
+            val insideHorizontal = x in left..right &&
+                (abs(y - top) <= threshold || abs(y - bottom) <= threshold)
+            val insideVertical = y in top..bottom &&
+                (abs(x - left) <= threshold || abs(x - right) <= threshold)
+            insideHorizontal || insideVertical
+        }
+
+        ShapeType.ELLIPSE -> {
+            val left = min(start.x, end.x)
+            val top = min(start.y, end.y)
+            val right = max(start.x, end.x)
+            val bottom = max(start.y, end.y)
+            val radiusX = max((right - left) / 2f, 0.001f)
+            val radiusY = max((bottom - top) / 2f, 0.001f)
+            val centerX = (left + right) / 2f
+            val centerY = (top + bottom) / 2f
+            val normalized = hypot((x - centerX) / radiusX, (y - centerY) / radiusY)
+            val tolerance = threshold / min(radiusX, radiusY)
+            abs(normalized - 1f) <= tolerance
+        }
+
+        null -> false
+    }
+}
+
+fun Stroke.intersectsPolygon(polygon: List<Pt>): Boolean {
+    if (polygon.size < 3) return false
+    if (points.any { polygonContains(polygon, it.x, it.y) }) return true
+    // Check segment midpoints too so a lasso between densely spaced points still selects.
+    for (i in 1 until points.size) {
+        val a = points[i - 1]
+        val b = points[i]
+        if (polygonContains(polygon, (a.x + b.x) / 2f, (a.y + b.y) / 2f)) return true
+    }
+    return false
+}
+
+fun polygonContains(polygon: List<Pt>, x: Float, y: Float): Boolean {
+    if (polygon.size < 3) return false
+    var inside = false
+    var j = polygon.lastIndex
+    for (i in polygon.indices) {
+        val pi = polygon[i]
+        val pj = polygon[j]
+        val intersects = ((pi.y > y) != (pj.y > y)) &&
+            (x < (pj.x - pi.x) * (y - pi.y) / (pj.y - pi.y + 0.000001f) + pi.x)
+        if (intersects) inside = !inside
+        j = i
+    }
+    return inside
+}
+
+fun TextItem.approximateBounds(): Bounds {
+    val lines = text.split('\n')
+    val maxChars = lines.maxOfOrNull { it.length } ?: 0
+    val width = maxChars * fontSize * 0.56f
+    val height = max(lines.size, 1) * fontSize * 1.28f
+    return Bounds(x, y, x + width, y + height)
+}
+
+fun TextItem.hitTest(x: Float, y: Float, extraRadius: Float): Boolean =
+    approximateBounds().expand(extraRadius).contains(x, y)
+
+fun selectionBounds(
+    page: Page,
+    strokeIds: Set<String>,
+    textIds: Set<String>,
+): Bounds? {
+    var bounds: Bounds? = null
+    page.strokes.forEach { stroke ->
+        if (stroke.id in strokeIds) bounds = Bounds.combine(bounds, stroke.bounds())
+    }
+    page.texts.forEach { text ->
+        if (text.id in textIds) bounds = Bounds.combine(bounds, text.approximateBounds())
+    }
+    return bounds
+}
+
+fun selectInsidePolygon(page: Page, polygon: List<Pt>): Pair<Set<String>, Set<String>> {
+    if (polygon.size < 3) return emptySet<String>() to emptySet()
+    val strokeIds = page.strokes.filter { it.intersectsPolygon(polygon) }.map { it.id }.toSet()
+    val textIds = page.texts.filter { polygonContains(polygon, it.approximateBounds().centerX, it.approximateBounds().centerY) }
+        .map { it.id }
+        .toSet()
+    return strokeIds to textIds
+}
+
+fun arrowHeadPoints(start: Pt, end: Pt, size: Float = 20f): Pair<Pt, Pt> {
+    val angle = atan2(end.y - start.y, end.x - start.x)
+    val length = hypot(end.x - start.x, end.y - start.y)
+    val head = min(size, max(length * 0.25f, 4f))
+    val first = Pt(
+        x = end.x - head * cos(angle - 0.5f),
+        y = end.y - head * sin(angle - 0.5f),
+    )
+    val second = Pt(
+        x = end.x - head * cos(angle + 0.5f),
+        y = end.y - head * sin(angle + 0.5f),
+    )
+    return first to second
+}
