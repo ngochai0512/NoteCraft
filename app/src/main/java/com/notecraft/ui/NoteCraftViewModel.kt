@@ -34,7 +34,7 @@ data class LibraryState(
 data class EditorState(
     val note: Note,
     val pageIndex: Int = 0,
-    val tool: ToolType = ToolType.PEN,
+    val tool: ToolType = ToolType.BALL_PEN,
     val toolColors: Map<ToolType, Long> = DefaultToolColors,
     val toolWidths: Map<ToolType, Float> = DefaultToolWidths,
     val shapeType: ShapeType = ShapeType.LINE,
@@ -61,8 +61,8 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         preferences.getFloat("width_${tool.name}", default)
     }
     private var savedTool: ToolType = runCatching {
-        ToolType.valueOf(preferences.getString("tool", ToolType.PEN.name) ?: ToolType.PEN.name)
-    }.getOrDefault(ToolType.PEN)
+        ToolType.valueOf(preferences.getString("tool", ToolType.BALL_PEN.name) ?: ToolType.BALL_PEN.name)
+    }.getOrDefault(ToolType.BALL_PEN)
 
     var library by mutableStateOf(LibraryState())
         private set
@@ -143,7 +143,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun renameNoteInLibrary(noteId: String, title: String) {
         val current = library.notes.firstOrNull { it.id == noteId } ?: return
         val updated = current.copy(
-            title = title.trim().ifBlank { "Untitled note" },
+            title = title.trim().ifBlank { "Untitled notebook" },
             updatedAt = System.currentTimeMillis(),
         )
         library = library.copy(notes = library.notes.map { if (it.id == noteId) updated else it }.sortedByDescending { it.updatedAt })
@@ -156,7 +156,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun renameCurrentNote(title: String) {
         val current = editor ?: return
         val updated = current.note.copy(
-            title = title.trim().ifBlank { "Untitled note" },
+            title = title.trim().ifBlank { "Untitled notebook" },
             updatedAt = System.currentTimeMillis(),
         )
         editor = current.copy(note = updated)

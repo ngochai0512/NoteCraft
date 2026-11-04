@@ -15,45 +15,55 @@ UI: Jetpack Compose + Material 3
 
 ### Drawing tools
 
-- **Pen** — smooth, rounded ink strokes
-- **Pencil** — graphite-like texture with per-stroke seeded grain
-- **Highlighter** — wide translucent strokes with multiply blending
+- **Fountain pen** — pressure-sensitive nib that opens up as you press
+- **Ball pen** — uniform, crisp ink line
+- **Brush pen** — wide, soft strokes with strong pressure response
+- **Marker** — broad translucent highlighter with multiply blending
 - **Eraser** — adjustable stroke eraser that removes ink, shapes, and text
 - **Shapes** — line, arrow, rectangle, and ellipse
-- **Text** — tap to add text, tap existing text to edit it
-- **Lasso** — draw a loop to select items, drag to move, then duplicate or delete
+- **Tape** — translucent washi-style strip for covering and decorating
+- **Laser pointer** — a red trail that fades when you lift your finger
+- **Pencil** — textured graphite line
+- **Text** — place and edit typed notes
+- **Lasso** — select strokes and text to move, duplicate or delete
+
+Tapping a tool selects it and opens that tool's color, size, and shape options in a compact dropdown. Tap the same tool again or touch outside to dismiss it; the ribbon otherwise stays collapsed so the canvas keeps more space.
 
 ### Canvas
 
-- Pinch to zoom up to 8×
-- Two-finger pan
-- Zoom controls with a fit-page button
+- Tactile paper sheet with a soft drop shadow on a neutral desk backdrop
+- Ruled 8 mm, squared graph, dotted 5 mm, Cornell and blank paper
+- Pinch to zoom up to 8× with two-finger pan
+- Floating zoom controls with a fit-page button
 - Undo and redo for every canvas, text, selection, and page operation
-- A4-proportioned pages with a subtle paper shadow
 
 ### Notes and pages
 
 - Create, rename, duplicate, and delete notes
 - Add, duplicate, delete, and reorder pages
-- Page backgrounds: blank, lined, grid, and dotted
-- Page navigator with page dots and previous/next controls
-- Live page thumbnails in the library
+- Page backgrounds: blank, ruled, squared graph, dotted and Cornell
+- Floating page navigator with page dots and previous/next controls
+- Page thumbnail drawer with quick add-page tile
+- Live notebook-cover previews in the library
+- Notebook covers with spine crease, ribbon bookmark and label badge
 - Search notes by title
 - Sort by recently updated, recently created, or title
 - Adaptive grid that shows more columns on larger screens
+- Settings button for upcoming preferences
 
 ### Colors and preferences
 
-- 13 preset ink colors
+- 12 preset ink colors
 - Custom HSV color picker
 - Per-tool color and size settings
 - Tool settings persist across app launches
 
 ### Appearance
 
+- Design system defined in [DESIGN.md](DESIGN.md)
+- Ink Blue primary, tactile paper surfaces and notebook cover tones
 - Material 3 light and dark themes
-- Edge-to-edge layout
-- Adaptive launcher icon
+- Edge-to-edge layout, adaptive launcher icon, press-scale tool feedback
 
 ## Requirements
 
@@ -67,7 +77,7 @@ UI: Jetpack Compose + Material 3
 1. Open Android Studio.
 2. Choose **Open** and select this folder:
    ```
-   /Users/ngochai/Desktop/NoteCraft
+   /Users/ngochai/Desktop/NoteCraft-Group-Project
    ```
 3. Wait for **Gradle sync** to finish.
 4. Create or select an emulator in **Tools → Device Manager**:
@@ -79,7 +89,7 @@ UI: Jetpack Compose + Material 3
 ### Build from the terminal
 
 ```bash
-cd ~/Desktop/NoteCraft
+cd ~/Desktop/NoteCraft-Group-Project
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 ./gradlew assembleDebug
@@ -125,7 +135,7 @@ Update that path if the SDK is installed elsewhere.
 | Add text | Text tool → tap an empty spot on the page |
 | Edit text | Text tool → tap existing text |
 | Change page | Use the arrows or page dots below the top bar |
-| Add a page | Use the `+` button in the page navigator |
+| Add a page | Open the page-thumbnail drawer and tap **Add page** |
 
 ## Project structure
 
@@ -147,11 +157,12 @@ app/src/main/
 │       ├── theme/Theme.kt            # Material 3 colors, typography, palette
 │       ├── components/
 │       │   ├── Dialogs.kt            # Rename, confirm, and text-entry dialogs
-│       │   └── NoteThumbnail.kt      # Library page previews
+│       │   ├── NoteThumbnail.kt      # Library page previews
+│       │   └── SettingsDialog.kt     # Home-screen settings
 │       ├── library/
 │       │   └── LibraryScreen.kt      # Note grid, search, sort, note actions
 │       └── editor/
-│           ├── EditorScreen.kt       # Top bar, page navigator, dialogs
+│           ├── EditorScreen.kt       # Top bar, page drawer, dialogs
 │           ├── DrawingCanvas.kt      # Gestures, drawing input, zoom/pan
 │           ├── PageRenderer.kt       # Paper, ink, pencil, shape, and text rendering
 │           ├── EditorToolbar.kt      # Tool picker, colors, widths, color picker
@@ -200,7 +211,20 @@ This is intentionally a compact version of a full note-taking app:
 - Text does not auto-wrap; use line breaks for multi-line notes.
 - Undo history lasts for the current app session only.
 - Notes are local to the device; there is no sync, export, or cloud backup.
-- Pages scroll horizontally through the page navigator rather than a continuous scrolling canvas.
+- Pages are navigated with the page controls and thumbnail drawer rather than a continuous swipe canvas.
+- Bookmarks, media insertion and drag-and-drop page reordering are not implemented yet.
+
+## Design system
+
+The interface follows [DESIGN.md](DESIGN.md):
+
+- **Brand**: Ink Blue `#2563EB`, with Focus Azure containers
+- **Paper**: `#FCFCFA` / `#FBF8F1` sheets on a `#F3F4F6` desk
+- **Ink and text**: `#0F172A`, `#475569`, `#94A3B8`
+- **Accents**: highlighter yellow `#FEF08A`, mint `#10B981`, tag purple `#8B5CF6`
+- **Covers**: Navy Leather, Terracotta, Forest Sage, Pastel Lavender and Charcoal
+- **Type**: 24 sp display, 18 sp titles, 15/14 sp body, 12 sp captions and 10 sp micro labels
+- **Shapes**: 8–12 dp tool pills, 16–20 dp floating ribbons, 10 dp notebook covers and 24 dp modals
 
 ## Troubleshooting
 

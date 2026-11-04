@@ -2,6 +2,7 @@ package com.notecraft.ui.editor
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
@@ -34,12 +35,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -55,12 +58,14 @@ import com.notecraft.model.Stroke as InkStroke
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.model.newId
+import com.notecraft.ui.theme.DeskBackdrop
 import com.notecraft.util.hitTest
 import com.notecraft.util.selectInsidePolygon
 import com.notecraft.util.selectionBounds
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlinx.coroutines.delay
 
 private data class CanvasTransform(val scale: Float, val origin: Offset)
 
@@ -69,7 +74,7 @@ private class CanvasViewport {
     var pan by mutableStateOf(Offset.Zero)
 }
 
-private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, LASSO, MOVE }
+private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, LASSO, MOVE, LASER }
 
 @Composable
 fun DrawingCanvas(
@@ -93,11 +98,13 @@ fun DrawingCanvas(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val paddingPx = with(density) { 22.dp.toPx() }
+    val pagePadding = with(density) { 18.dp.toPx() }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val viewport = remember(page.id) { CanvasViewport() }
     var previewStroke by remember { mutableStateOf<InkStroke?>(null) }
     var lassoPreview by remember { mutableStateOf<List<Pt>>(emptyList()) }
+    var laserPoints by remember { mutableStateOf<List<Pt>>(emptyList()) }
+    var laserFadeKey by remember { mutableStateOf(0) }
 
     val currentPage by rememberUpdatedState(page)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokeIds)
@@ -121,18 +128,26 @@ fun DrawingCanvas(
     LaunchedEffect(page.id, tool) {
         previewStroke = null
         lassoPreview = emptyList()
+        laserPoints = emptyList()
+    }
+
+    // The laser pointer is a trail that fades shortly after the finger lifts.
+    LaunchedEffect(laserFadeKey) {
+        if (laserFadeKey > 0) {
+            delay(450)
+            laserPoints = emptyList()
+        }
     }
 
     fun baseScale(size: IntSize): Float {
         if (size.width == 0 || size.height == 0) return 1f
-        val availableWidth = (size.width - paddingPx * 2).coerceAtLeast(1f)
-        val availableHeight = (size.height - paddingPx * 2).coerceAtLeast(1f)
+        val availableWidth = (size.width - pagePadding * 2f).coerceAtLeast(1f)
+        val availableHeight = (size.height - pagePadding * 2f).coerceAtLeast(1f)
         return min(availableWidth / PAGE_WIDTH, availableHeight / PAGE_HEIGHT)
     }
 
     fun currentTransform(): CanvasTransform {
-        val base = baseScale(canvasSize)
-        val scale = base * viewport.zoom
+        val scale = baseScale(canvasSize) * viewport.zoom
         val origin = Offset(
             (canvasSize.width - PAGE_WIDTH * scale) / 2f + viewport.pan.x,
             (canvasSize.height - PAGE_HEIGHT * scale) / 2f + viewport.pan.y,
@@ -151,11 +166,13 @@ fun DrawingCanvas(
 
     fun clampPan(candidate: Offset, zoom: Float): Offset {
         if (canvasSize.width == 0 || canvasSize.height == 0) return candidate
-        val scaledWidth = PAGE_WIDTH * baseScale(canvasSize) * zoom
-        val scaledHeight = PAGE_HEIGHT * baseScale(canvasSize) * zoom
-        val maxX = max(0f, (scaledWidth - canvasSize.width) / 2f + 24f)
-        val maxY = max(0f, (scaledHeight - canvasSize.height) / 2f + 24f)
-        return Offset(candidate.x.coerceIn(-maxX, maxX), candidate.y.coerceIn(-maxY, maxY))
+        val scale = baseScale(canvasSize) * zoom
+        val maxX = max(0f, (PAGE_WIDTH * scale - canvasSize.width) / 2f + pagePadding)
+        val maxY = max(0f, (PAGE_HEIGHT * scale - canvasSize.height) / 2f + pagePadding)
+        return Offset(
+            candidate.x.coerceIn(-maxX, maxX),
+            candidate.y.coerceIn(-maxY, maxY),
+        )
     }
 
     fun applyTransform(focus: Offset, panChange: Offset, zoomChange: Float) {
@@ -164,8 +181,7 @@ fun DrawingCanvas(
         val previousFocus = focus - panChange
         val focusInPage = (previousFocus - transform.origin) / transform.scale
         val newZoom = (viewport.zoom * zoomChange).coerceIn(1f, 8f)
-        val base = baseScale(canvasSize)
-        val newScale = base * newZoom
+        val newScale = baseScale(canvasSize) * newZoom
         val candidate = Offset(
             focus.x - focusInPage.x * newScale - (canvasSize.width - PAGE_WIDTH * newScale) / 2f,
             focus.y - focusInPage.y * newScale - (canvasSize.height - PAGE_HEIGHT * newScale) / 2f,
@@ -188,15 +204,15 @@ fun DrawingCanvas(
         viewport.pan = Offset.Zero
     }
 
-    val workspaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    val dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
     val hintBackground = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
     val hintText = MaterialTheme.colorScheme.onSurfaceVariant
+    val canvasColor = MaterialTheme.colorScheme.background
+    val deskTop = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(workspaceColor)
+            .background(canvasColor)
             .onSizeChanged { canvasSize = it },
     ) {
         Canvas(
@@ -207,7 +223,6 @@ fun DrawingCanvas(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val downPage = screenToPage(down.position)
-                        val startedInside = isInsidePage(downPage)
                         var mode = GestureMode.NONE
                         var points = mutableListOf<Pt>()
                         var lassoPoints = mutableListOf<Pt>()
@@ -235,12 +250,24 @@ fun DrawingCanvas(
                             )
                         }
 
-                        if (startedInside) {
+                        if (isInsidePage(downPage)) {
                             when (tool) {
-                                ToolType.PEN, ToolType.PENCIL, ToolType.HIGHLIGHTER -> {
+                                ToolType.FOUNTAIN_PEN,
+                                ToolType.BALL_PEN,
+                                ToolType.BRUSH_PEN,
+                                ToolType.PENCIL,
+                                ToolType.HIGHLIGHTER,
+                                ToolType.TAPE,
+                                -> {
                                     mode = GestureMode.DRAW
                                     points.add(Pt(downPage.x, downPage.y, pressureOf(down)))
                                     previewStroke = makeStroke()
+                                }
+
+                                ToolType.LASER -> {
+                                    mode = GestureMode.LASER
+                                    points.add(Pt(downPage.x, downPage.y, pressureOf(down)))
+                                    laserPoints = points.toList()
                                 }
 
                                 ToolType.SHAPE -> {
@@ -291,6 +318,7 @@ fun DrawingCanvas(
                                     transformMode = true
                                     previewStroke = null
                                     lassoPreview = emptyList()
+                                    laserPoints = emptyList()
                                     if (eraseActive) {
                                         eraseEnd()
                                         eraseActive = false
@@ -312,11 +340,10 @@ fun DrawingCanvas(
                                 val change = event.changes.firstOrNull()
                                 if (change != null && change.pressed) {
                                     val pagePoint = screenToPage(change.position)
-                                    val inside = isInsidePage(pagePoint)
                                     val transform = currentTransform()
                                     when (mode) {
                                         GestureMode.DRAW, GestureMode.SHAPE -> {
-                                            if (inside) {
+                                            if (isInsidePage(pagePoint)) {
                                                 val last = points.last()
                                                 val distance = hypot(pagePoint.x - last.x, pagePoint.y - last.y)
                                                 if (distance >= 1.6f) {
@@ -335,12 +362,22 @@ fun DrawingCanvas(
                                             }
                                         }
 
+                                        GestureMode.LASER -> {
+                                            if (isInsidePage(pagePoint)) {
+                                                val last = points.last()
+                                                if (hypot(pagePoint.x - last.x, pagePoint.y - last.y) >= 1.2f) {
+                                                    points.add(Pt(pagePoint.x, pagePoint.y, pressureOf(change)))
+                                                    laserPoints = points.toList()
+                                                }
+                                            }
+                                        }
+
                                         GestureMode.ERASE -> {
-                                            if (inside) eraseMove(pagePoint)
+                                            if (isInsidePage(pagePoint)) eraseMove(pagePoint)
                                         }
 
                                         GestureMode.LASSO -> {
-                                            if (inside) {
+                                            if (isInsidePage(pagePoint)) {
                                                 val last = lassoPoints.lastOrNull()
                                                 if (last == null ||
                                                     hypot(pagePoint.x - last.x, pagePoint.y - last.y) >= 2f
@@ -402,13 +439,15 @@ fun DrawingCanvas(
                                 }
 
                                 GestureMode.TEXT -> {
-                                    if (!moved && startedInside) {
+                                    if (!moved && isInsidePage(downPage)) {
                                         val hit = currentPage.texts.lastOrNull {
                                             it.hitTest(downPage.x, downPage.y, 8f)
                                         }
                                         if (hit != null) editText(hit) else addText(downPage)
                                     }
                                 }
+
+                                GestureMode.LASER -> laserFadeKey++
 
                                 GestureMode.NONE -> Unit
                             }
@@ -419,43 +458,41 @@ fun DrawingCanvas(
                     }
                 },
         ) {
-            // Workspace dot grid.
-            val dotSpacing = 34f
-            var x = dotSpacing
-            while (x < size.width) {
-                var y = dotSpacing
-                while (y < size.height) {
-                    drawCircle(color = dotColor, radius = 1.1f, center = Offset(x, y))
-                    y += dotSpacing
-                }
-                x += dotSpacing
-            }
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(deskTop, canvasColor),
+                ),
+            )
 
             val transform = currentTransform()
             if (transform.scale > 0f) {
-                drawPagePaperEdge(transform.origin, transform.scale)
-                drawPageContent(
-                    page = page,
-                    scale = transform.scale,
-                    origin = transform.origin,
-                    selectedStrokeIds = selectedStrokeIds,
-                    selectedTextIds = selectedTextIds,
-                    drawSelection = true,
-                    drawPaper = false,
-                )
+                drawPaperSheet(transform.scale, transform.origin)
+                clipRect(
+                    left = transform.origin.x,
+                    top = transform.origin.y,
+                    right = transform.origin.x + PAGE_WIDTH * transform.scale,
+                    bottom = transform.origin.y + PAGE_HEIGHT * transform.scale,
+                ) {
+                    drawPageBackground(page.background, transform.scale, transform.origin)
+                    drawPageContent(
+                        page = page,
+                        scale = transform.scale,
+                        origin = transform.origin,
+                        selectedStrokeIds = selectedStrokeIds,
+                        selectedTextIds = selectedTextIds,
+                        drawSelection = true,
+                        drawPaper = false,
+                        drawBackground = false,
+                        clip = false,
+                    )
 
-                previewStroke?.let { stroke ->
-                    drawStrokeBody(stroke, transform.scale, transform.origin)
+                    previewStroke?.let { stroke ->
+                        drawStrokeBody(stroke, transform.scale, transform.origin)
+                    }
+
+                    drawLaserTrail(laserPoints, transform)
+                    drawLassoPreview(lassoPreview, transform)
                 }
-
-                drawLassoPreview(lassoPreview, transform)
-
-                drawRect(
-                    color = Color.Black.copy(alpha = 0.10f),
-                    topLeft = transform.origin,
-                    size = Size(PAGE_WIDTH * transform.scale, PAGE_HEIGHT * transform.scale),
-                    style = DrawStroke(width = 1.2f),
-                )
             }
         }
 
@@ -467,10 +504,15 @@ fun DrawingCanvas(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                tonalElevation = 2.dp,
-                shadowElevation = 2.dp,
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                tonalElevation = 0.dp,
+                shadowElevation = 10.dp,
+                modifier = Modifier.border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(16.dp),
+                ),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(onClick = { zoomBy(1.3f) }, modifier = Modifier.size(36.dp)) {
@@ -478,7 +520,7 @@ fun DrawingCanvas(
                             Icons.Outlined.ZoomIn,
                             contentDescription = "Zoom in",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(19.dp),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                     Text(
@@ -491,15 +533,15 @@ fun DrawingCanvas(
                             Icons.Outlined.ZoomOut,
                             contentDescription = "Zoom out",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(19.dp),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                     IconButton(onClick = ::resetViewport, modifier = Modifier.size(36.dp)) {
                         Icon(
                             Icons.Outlined.FitScreen,
-                            contentDescription = "Fit page",
+                            contentDescription = "Reset view",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(19.dp),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
@@ -511,14 +553,14 @@ fun DrawingCanvas(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(14.dp),
-                shape = RoundedCornerShape(50),
+                shape = RoundedCornerShape(12.dp),
                 color = hintBackground,
-                tonalElevation = 1.dp,
-                shadowElevation = 1.dp,
+                tonalElevation = 0.dp,
+                shadowElevation = 4.dp,
             ) {
                 Text(
                     text = if (tool == ToolType.TEXT) {
-                        "Tap on the page to add text"
+                        "Tap the page to add a text box"
                     } else {
                         "Circle items to select · drag to move"
                     },
@@ -529,6 +571,28 @@ fun DrawingCanvas(
             }
         }
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLaserTrail(
+    points: List<Pt>,
+    transform: CanvasTransform,
+) {
+    if (points.size < 2) return
+    val path = Path()
+    points.forEachIndexed { index, point ->
+        val screen = Offset(transform.origin.x + point.x * transform.scale, transform.origin.y + point.y * transform.scale)
+        if (index == 0) path.moveTo(screen.x, screen.y) else path.lineTo(screen.x, screen.y)
+    }
+    drawPath(
+        path = path,
+        color = Color(0xFFEF4444).copy(alpha = 0.18f),
+        style = DrawStroke(width = 22f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+    )
+    drawPath(
+        path = path,
+        color = Color(0xFFEF4444).copy(alpha = 0.85f),
+        style = DrawStroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+    )
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLassoPreview(
@@ -544,11 +608,11 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLassoPreview(
     path.close()
     drawPath(
         path = path,
-        color = Color(0xFF5B7CFA).copy(alpha = 0.08f),
+        color = Color(0xFF2563EB).copy(alpha = 0.08f),
     )
     drawPath(
         path = path,
-        color = Color(0xFF5B7CFA),
+        color = Color(0xFF2563EB),
         style = DrawStroke(
             width = 2f,
             cap = StrokeCap.Round,

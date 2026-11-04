@@ -7,11 +7,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.ui.editor.drawPageContent
+import com.notecraft.ui.theme.PaperSurface
 import kotlin.math.min
 
 @Composable
@@ -20,7 +20,7 @@ fun NoteThumbnail(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier.background(Color.White),
+        modifier = modifier.background(PaperSurface),
     ) {
         if (page != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {

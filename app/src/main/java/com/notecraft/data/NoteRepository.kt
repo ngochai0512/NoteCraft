@@ -116,7 +116,7 @@ class NoteRepository(context: Context) {
 
         return Note(
             id = json.optString("id").ifBlank { newId() },
-            title = json.optString("title").ifBlank { "Untitled note" },
+            title = json.optString("title").ifBlank { "Untitled notebook" },
             createdAt = json.optLong("createdAt", now),
             updatedAt = json.optLong("updatedAt", now),
             pages = pages,
@@ -167,7 +167,7 @@ class NoteRepository(context: Context) {
         if (points.isEmpty()) return null
         return Stroke(
             id = json.optString("id").ifBlank { newId() },
-            tool = enumValueOrDefault(json.optString("tool"), ToolType.PEN),
+            tool = parseTool(json.optString("tool")),
             color = json.optLong("color", 0xFF23222BL),
             width = json.optDouble("width", 4.0).toFloat(),
             points = points,
@@ -186,6 +186,15 @@ class NoteRepository(context: Context) {
         color = json.optLong("color", 0xFF23222BL),
         fontSize = json.optDouble("fontSize", 34.0).toFloat(),
     )
+
+    /**
+     * Older notes stored `PEN`; it maps to the ball pen so their strokes keep rendering.
+     * Unknown tools fall back to the ball pen instead of dropping the stroke.
+     */
+    private fun parseTool(raw: String): ToolType = when (raw) {
+        "PEN" -> ToolType.BALL_PEN
+        else -> runCatching { ToolType.valueOf(raw) }.getOrDefault(ToolType.BALL_PEN)
+    }
 
     private inline fun <reified T : Enum<T>> enumValueOrDefault(raw: String?, default: T): T =
         runCatching { enumValueOf<T>(raw.orEmpty()) }.getOrDefault(default)

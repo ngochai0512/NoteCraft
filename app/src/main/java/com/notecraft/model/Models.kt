@@ -7,14 +7,51 @@ const val PAGE_WIDTH = 1000f
 const val PAGE_HEIGHT = 1414f
 
 enum class ToolType(val label: String) {
-    PEN("Pen"),
+    FOUNTAIN_PEN("Fountain"),
+    BALL_PEN("Ball"),
+    BRUSH_PEN("Brush"),
     PENCIL("Pencil"),
-    HIGHLIGHTER("Highlighter"),
+    HIGHLIGHTER("Marker"),
     ERASER("Eraser"),
-    SHAPE("Shape"),
+    SHAPE("Shapes"),
+    TAPE("Tape"),
+    LASER("Laser"),
     TEXT("Text"),
     LASSO("Lasso"),
 }
+
+/** Tools shown in the editor's primary tool row, in design order. */
+val PrimaryTools: List<ToolType> = listOf(
+    ToolType.FOUNTAIN_PEN,
+    ToolType.BALL_PEN,
+    ToolType.BRUSH_PEN,
+    ToolType.PENCIL,
+    ToolType.HIGHLIGHTER,
+    ToolType.ERASER,
+    ToolType.LASSO,
+    ToolType.TEXT,
+)
+
+/** Tools kept out of the primary row, reachable from the editor's overflow menu. */
+val SecondaryTools: List<ToolType> = listOf(
+    ToolType.SHAPE,
+    ToolType.TAPE,
+    ToolType.LASER,
+)
+
+/** Tools that leave a mark on the page. Laser is a transient pointer and is never stored. */
+val PersistentTools: Set<ToolType> = setOf(
+    ToolType.FOUNTAIN_PEN,
+    ToolType.BALL_PEN,
+    ToolType.BRUSH_PEN,
+    ToolType.PENCIL,
+    ToolType.HIGHLIGHTER,
+    ToolType.ERASER,
+    ToolType.SHAPE,
+    ToolType.TAPE,
+    ToolType.TEXT,
+    ToolType.LASSO,
+)
 
 enum class ShapeType(val label: String) {
     LINE("Line"),
@@ -24,10 +61,11 @@ enum class ShapeType(val label: String) {
 }
 
 enum class PageBackground(val label: String) {
-    BLANK("Blank"),
-    LINED("Lined"),
-    GRID("Grid"),
-    DOTTED("Dotted"),
+    BLANK("Blank paper"),
+    LINED("Ruled · 8 mm"),
+    GRID("Squared graph"),
+    DOTTED("Dotted · 5 mm"),
+    CORNELL("Cornell notes"),
 }
 
 /** A point in page coordinates, with the touch pressure recorded at input time. */
@@ -84,7 +122,7 @@ fun newId(): String = UUID.randomUUID().toString()
 fun blankPage(background: PageBackground = PageBackground.BLANK): Page =
     Page(id = newId(), background = background)
 
-fun newNote(title: String = "Untitled note"): Note {
+fun newNote(title: String = "Untitled notebook"): Note {
     val now = System.currentTimeMillis()
     return Note(
         id = newId(),
@@ -99,7 +137,7 @@ fun Note.duplicate(): Note {
     val now = System.currentTimeMillis()
     return copy(
         id = newId(),
-        title = if (title.isBlank()) "Untitled note copy" else "$title copy",
+        title = if (title.isBlank()) "Untitled notebook copy" else "$title copy",
         createdAt = now,
         updatedAt = now,
         pages = pages.map { page -> page.duplicate() },
@@ -113,26 +151,36 @@ fun Page.duplicate(): Page = copy(
 )
 
 val DefaultToolWidths: Map<ToolType, Float> = mapOf(
-    ToolType.PEN to 4.5f,
+    ToolType.FOUNTAIN_PEN to 5f,
+    ToolType.BALL_PEN to 3f,
+    ToolType.BRUSH_PEN to 12f,
     ToolType.PENCIL to 4f,
     ToolType.HIGHLIGHTER to 22f,
     ToolType.ERASER to 26f,
     ToolType.SHAPE to 4f,
+    ToolType.TAPE to 26f,
+    ToolType.LASER to 5f,
     ToolType.TEXT to 34f,
     ToolType.LASSO to 4f,
 )
 
-const val InkBlack: Long = 0xFF23222BL
-const val HighlightYellow: Long = 0xFFFFD966L
-const val DefaultShapeColor: Long = 0xFF5B4B8AL
-const val PencilGrey: Long = 0xFF3C3B44L
+const val InkBlack: Long = 0xFF0F172AL
+const val HighlightYellow: Long = 0xFFFEF08AL
+const val DefaultShapeColor: Long = 0xFF2563EBL
+const val PencilGrey: Long = 0xFF475569L
+const val LaserRed: Long = 0xFFEF4444L
+const val TapeColor: Long = 0xFFFDE68AL
 
 val DefaultToolColors: Map<ToolType, Long> = mapOf(
-    ToolType.PEN to InkBlack,
+    ToolType.FOUNTAIN_PEN to InkBlack,
+    ToolType.BALL_PEN to InkBlack,
+    ToolType.BRUSH_PEN to InkBlack,
     ToolType.PENCIL to PencilGrey,
     ToolType.HIGHLIGHTER to HighlightYellow,
-    ToolType.SHAPE to DefaultShapeColor,
-    ToolType.TEXT to InkBlack,
     ToolType.ERASER to InkBlack,
+    ToolType.SHAPE to DefaultShapeColor,
+    ToolType.TAPE to TapeColor,
+    ToolType.LASER to LaserRed,
+    ToolType.TEXT to InkBlack,
     ToolType.LASSO to DefaultShapeColor,
 )

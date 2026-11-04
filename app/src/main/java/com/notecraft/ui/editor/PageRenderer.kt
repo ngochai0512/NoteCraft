@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -28,6 +29,7 @@ import com.notecraft.util.approximateBounds
 import com.notecraft.util.selectionBounds
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
@@ -35,12 +37,13 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
-private val PaperColor = Color(0xFFFFFEFB)
-private val RuleColor = Color(0xFFB9D4E8)
-private val GridColor = Color(0xFFC9D6E2)
-private val MarginColor = Color(0xFFE6A5A5)
-private val DotColor = Color(0xFF9FB3C4)
-private val SelectionColor = Color(0xFF5B7CFA)
+private val PaperColor = Color(0xFFFCFCFA)
+private val PaperWarm = Color(0xFFFBF8F1)
+private val RuleColor = Color(0xFFE2E8F0)
+private val GridColor = Color(0xFFE2E8F0)
+private val MarginColor = Color(0xFFEF4444)
+private val DotColor = Color(0xFF94A3B8)
+private val SelectionColor = Color(0xFF2563EB)
 
 fun DrawScope.drawPageContent(
     page: Page,
@@ -50,23 +53,20 @@ fun DrawScope.drawPageContent(
     selectedTextIds: Set<String> = emptySet(),
     drawSelection: Boolean = false,
     drawPaper: Boolean = true,
+    drawBackground: Boolean = true,
+    clip: Boolean = true,
 ) {
     val pageWidth = PAGE_WIDTH * scale
     val pageHeight = PAGE_HEIGHT * scale
     if (drawPaper) {
         drawRect(
-            color = PaperColor,
+            brush = Brush.verticalGradient(listOf(PaperColor, PaperWarm)),
             topLeft = origin,
             size = Size(pageWidth, pageHeight),
         )
     }
-    clipRect(
-        left = origin.x,
-        top = origin.y,
-        right = origin.x + pageWidth,
-        bottom = origin.y + pageHeight,
-    ) {
-        drawPageBackground(page.background, scale, origin)
+    val content: DrawScope.() -> Unit = {
+        if (drawBackground) drawPageBackground(page.background, scale, origin)
         page.strokes.forEach { stroke ->
             val selected = stroke.id in selectedStrokeIds
             if (selected) {
@@ -84,52 +84,81 @@ fun DrawScope.drawPageContent(
             }
         }
     }
+    if (clip) {
+        clipRect(
+            left = origin.x,
+            top = origin.y,
+            right = origin.x + pageWidth,
+            bottom = origin.y + pageHeight,
+            block = content,
+        )
+    } else {
+        content()
+    }
 }
 
-fun DrawScope.drawPageBackground(background: PageBackground, scale: Float, origin: Offset) {
+/**
+ * Draws the page pattern inside the paper sheet. The sheet is the full logical page, so the
+ * pattern always stops at the paper edge.
+ */
+fun DrawScope.drawPageBackground(
+    background: PageBackground,
+    scale: Float,
+    origin: Offset,
+) {
+    if (scale <= 0f) return
+    val left = origin.x
+    val top = origin.y
+    val right = origin.x + PAGE_WIDTH * scale
+    val bottom = origin.y + PAGE_HEIGHT * scale
     when (background) {
         PageBackground.BLANK -> Unit
 
         PageBackground.LINED -> {
-            val spacing = 56f * scale
-            val marginX = origin.x + 92f * scale
-            var y = origin.y + spacing
-            while (y < origin.y + PAGE_HEIGHT * scale) {
+            // 8 mm ruled paper.
+            val spacing = 38f * scale
+            val lineWidth = 1.1f * scale.coerceAtLeast(0.3f)
+            var y = origin.y + spacing * ceil((top - origin.y) / spacing)
+            while (y <= bottom) {
                 drawLine(
-                    color = RuleColor.copy(alpha = 0.55f),
-                    start = Offset(origin.x + 52f * scale, y),
-                    end = Offset(origin.x + PAGE_WIDTH * scale - 40f * scale, y),
-                    strokeWidth = 1.2f * scale.coerceAtLeast(0.3f),
+                    color = RuleColor.copy(alpha = 0.65f),
+                    start = Offset(left, y),
+                    end = Offset(right, y),
+                    strokeWidth = lineWidth,
                 )
                 y += spacing
             }
-            drawLine(
-                color = MarginColor.copy(alpha = 0.65f),
-                start = Offset(marginX, origin.y),
-                end = Offset(marginX, origin.y + PAGE_HEIGHT * scale),
-                strokeWidth = 1.2f * scale.coerceAtLeast(0.3f),
-            )
+            val marginX = origin.x + 90f * scale
+            if (marginX in left..right) {
+                drawLine(
+                    color = MarginColor.copy(alpha = 0.30f),
+                    start = Offset(marginX, top),
+                    end = Offset(marginX, bottom),
+                    strokeWidth = lineWidth,
+                )
+            }
         }
 
         PageBackground.GRID -> {
-            val spacing = 48f * scale
-            val lineWidth = 1.1f * scale.coerceAtLeast(0.3f)
-            var x = origin.x + spacing
-            while (x < origin.x + PAGE_WIDTH * scale) {
+            // 5 mm squared graph paper.
+            val spacing = 24f * scale
+            val lineWidth = 1f * scale.coerceAtLeast(0.3f)
+            var x = origin.x + spacing * ceil((left - origin.x) / spacing)
+            while (x <= right) {
                 drawLine(
                     color = GridColor.copy(alpha = 0.55f),
-                    start = Offset(x, origin.y),
-                    end = Offset(x, origin.y + PAGE_HEIGHT * scale),
+                    start = Offset(x, top),
+                    end = Offset(x, bottom),
                     strokeWidth = lineWidth,
                 )
                 x += spacing
             }
-            var y = origin.y + spacing
-            while (y < origin.y + PAGE_HEIGHT * scale) {
+            var y = origin.y + spacing * ceil((top - origin.y) / spacing)
+            while (y <= bottom) {
                 drawLine(
                     color = GridColor.copy(alpha = 0.55f),
-                    start = Offset(origin.x, y),
-                    end = Offset(origin.x + PAGE_WIDTH * scale, y),
+                    start = Offset(left, y),
+                    end = Offset(right, y),
                     strokeWidth = lineWidth,
                 )
                 y += spacing
@@ -137,20 +166,58 @@ fun DrawScope.drawPageBackground(background: PageBackground, scale: Float, origi
         }
 
         PageBackground.DOTTED -> {
-            val spacing = 48f * scale
-            val radius = 1.6f * scale.coerceAtLeast(0.4f)
-            var x = origin.x + spacing
-            while (x < origin.x + PAGE_WIDTH * scale) {
-                var y = origin.y + spacing
-                while (y < origin.y + PAGE_HEIGHT * scale) {
+            // 5 mm dotted grid.
+            val spacing = 24f * scale
+            val radius = 1.35f * scale.coerceAtLeast(0.35f)
+            var x = origin.x + spacing * ceil((left - origin.x) / spacing)
+            while (x <= right) {
+                var y = origin.y + spacing * ceil((top - origin.y) / spacing)
+                while (y <= bottom) {
                     drawCircle(
-                        color = DotColor.copy(alpha = 0.65f),
+                        color = DotColor.copy(alpha = 0.45f),
                         radius = radius,
                         center = Offset(x, y),
                     )
                     y += spacing
                 }
                 x += spacing
+            }
+        }
+
+        PageBackground.CORNELL -> {
+            // Cornell layout: title band, cue column, note area, summary band.
+            val spacing = 38f * scale
+            val lineWidth = 1.1f * scale.coerceAtLeast(0.3f)
+            val topLineY = origin.y + 150f * scale
+            val summaryY = origin.y + 1120f * scale
+            val cueX = origin.x + 280f * scale
+
+            var y = topLineY + spacing
+            while (y < summaryY) {
+                drawLine(
+                    color = RuleColor.copy(alpha = 0.45f),
+                    start = Offset(left, y),
+                    end = Offset(right, y),
+                    strokeWidth = lineWidth,
+                )
+                y += spacing
+            }
+
+            listOf(topLineY, summaryY).forEach { lineY ->
+                drawLine(
+                    color = GridColor.copy(alpha = 0.85f),
+                    start = Offset(left, lineY),
+                    end = Offset(right, lineY),
+                    strokeWidth = lineWidth * 1.2f,
+                )
+            }
+            if (cueX in left..right) {
+                drawLine(
+                    color = MarginColor.copy(alpha = 0.45f),
+                    start = Offset(cueX, topLineY),
+                    end = Offset(cueX, summaryY),
+                    strokeWidth = lineWidth * 1.2f,
+                )
             }
         }
     }
@@ -176,19 +243,17 @@ fun DrawScope.drawStrokeBody(
         return
     }
     if (stroke.tool == ToolType.ERASER || stroke.tool == ToolType.LASSO) return
+    if (stroke.tool == ToolType.TEXT) return
 
-    if (screenPoints.size == 1) {
-        drawCircle(
-            color = color.copy(alpha = alpha),
-            radius = width / 2f,
-            center = screenPoints.first(),
-        )
-        return
-    }
+    val pressures = stroke.points.map { it.pressure }
 
-    val path = smoothPath(screenPoints)
     when (stroke.tool) {
         ToolType.HIGHLIGHTER -> {
+            if (screenPoints.size == 1) {
+                drawCircle(color = color.copy(alpha = 0.30f * alpha), radius = width / 2f, center = screenPoints.first())
+                return
+            }
+            val path = smoothPath(screenPoints)
             val highlight = color.copy(alpha = 0.30f * alpha)
             drawPath(
                 path = path,
@@ -204,7 +269,34 @@ fun DrawScope.drawStrokeBody(
             )
         }
 
+        ToolType.TAPE -> drawTapeBand(screenPoints, color, width, alpha)
+
+        // Fountain nib: thin on light pressure, opening up as the pen is pressed.
+        ToolType.FOUNTAIN_PEN -> drawPressureStroke(
+            points = screenPoints,
+            pressures = pressures,
+            color = color.copy(alpha = alpha),
+            baseWidth = width,
+            minFactor = 0.45f,
+            maxFactor = 1.35f,
+        )
+
+        // Brush pen: soft, wide, and much more responsive to pressure than a fountain pen.
+        ToolType.BRUSH_PEN -> drawPressureStroke(
+            points = screenPoints,
+            pressures = pressures,
+            color = color.copy(alpha = alpha),
+            baseWidth = width,
+            minFactor = 0.35f,
+            maxFactor = 1.85f,
+        )
+
         ToolType.PENCIL -> {
+            if (screenPoints.size == 1) {
+                drawCircle(color = color.copy(alpha = 0.78f * alpha), radius = width / 2f, center = screenPoints.first())
+                return
+            }
+            val path = smoothPath(screenPoints)
             drawPath(
                 path = path,
                 color = color.copy(alpha = 0.78f * alpha),
@@ -214,13 +306,76 @@ fun DrawScope.drawStrokeBody(
         }
 
         else -> {
+            if (screenPoints.size == 1) {
+                drawCircle(
+                    color = color.copy(alpha = alpha),
+                    radius = width / 2f,
+                    center = screenPoints.first(),
+                )
+                return
+            }
             drawPath(
-                path = path,
+                path = smoothPath(screenPoints),
                 color = color.copy(alpha = alpha),
                 style = DrawStroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
             )
         }
     }
+}
+
+/**
+ * Draws segment by segment so each part of the line can take the width its pressure asks for.
+ * Round caps on every segment keep the joins smooth.
+ */
+private fun DrawScope.drawPressureStroke(
+    points: List<Offset>,
+    pressures: List<Float>,
+    color: Color,
+    baseWidth: Float,
+    minFactor: Float,
+    maxFactor: Float,
+) {
+    if (points.isEmpty()) return
+    if (points.size == 1) {
+        drawCircle(color = color, radius = baseWidth * 0.55f, center = points.first())
+        return
+    }
+    for (index in 1 until points.size) {
+        val pressure = pressures.getOrElse(index) { 0.5f }.coerceIn(0.15f, 1f)
+        val factor = minFactor + (maxFactor - minFactor) * pressure
+        drawLine(
+            color = color,
+            start = points[index - 1],
+            end = points[index],
+            strokeWidth = (baseWidth * factor).coerceAtLeast(0.6f),
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+/** Tape is a translucent band laid over the page, like a strip of washi tape. */
+private fun DrawScope.drawTapeBand(
+    points: List<Offset>,
+    color: Color,
+    width: Float,
+    alpha: Float,
+) {
+    if (points.isEmpty()) return
+    if (points.size == 1) {
+        drawCircle(color = color.copy(alpha = 0.42f * alpha), radius = width / 2f, center = points.first())
+        return
+    }
+    val path = smoothPath(points)
+    drawPath(
+        path = path,
+        color = color.copy(alpha = 0.14f * alpha),
+        style = DrawStroke(width = width * 1.08f, cap = StrokeCap.Square, join = StrokeJoin.Round),
+    )
+    drawPath(
+        path = path,
+        color = color.copy(alpha = 0.42f * alpha),
+        style = DrawStroke(width = width, cap = StrokeCap.Square, join = StrokeJoin.Round),
+    )
 }
 
 private fun DrawScope.drawPencilTexture(
@@ -347,8 +502,39 @@ fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
     }
 }
 
-fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {
-    val left = origin.x + bounds.left * scale
+fun DrawScope.drawPaperSheet(scale: Float, origin: Offset) {
+    val pageSize = Size(PAGE_WIDTH * scale, PAGE_HEIGHT * scale)
+    val corner = CornerRadius(3f, 3f)
+    // Layered, soft shadow against the desk backdrop.
+    drawRoundRect(
+        color = Color(0xFF0F172A).copy(alpha = 0.10f),
+        topLeft = Offset(origin.x, origin.y + 6f),
+        size = pageSize,
+        cornerRadius = corner,
+    )
+    drawRoundRect(
+        color = Color(0xFF0F172A).copy(alpha = 0.06f),
+        topLeft = Offset(origin.x, origin.y + 12f),
+        size = pageSize,
+        cornerRadius = corner,
+    )
+    drawRoundRect(
+        brush = Brush.verticalGradient(listOf(PaperColor, PaperWarm)),
+        topLeft = origin,
+        size = pageSize,
+        cornerRadius = corner,
+    )
+    // A hairline keeps the paper edge crisp against the desk.
+    drawRoundRect(
+        color = Color(0xFF0F172A).copy(alpha = 0.06f),
+        topLeft = origin,
+        size = pageSize,
+        cornerRadius = corner,
+        style = DrawStroke(width = 1f),
+    )
+}
+
+fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {    val left = origin.x + bounds.left * scale
     val top = origin.y + bounds.top * scale
     val width = bounds.width * scale
     val height = bounds.height * scale
@@ -376,20 +562,4 @@ fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {
             style = DrawStroke(width = 2f),
         )
     }
-}
-
-fun DrawScope.drawPagePaperEdge(origin: Offset, scale: Float) {
-    val width = PAGE_WIDTH * scale
-    val height = PAGE_HEIGHT * scale
-    drawRoundRect(
-        color = Color.Black.copy(alpha = 0.14f),
-        topLeft = Offset(origin.x + 3f, origin.y + 5f),
-        size = Size(width, height),
-        cornerRadius = CornerRadius(3f, 3f),
-    )
-    drawRect(
-        color = PaperColor,
-        topLeft = origin,
-        size = Size(width, height),
-    )
 }

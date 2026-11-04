@@ -1,5 +1,7 @@
 package com.notecraft.ui.library
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,12 +10,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -41,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,9 +61,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -65,12 +75,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.notecraft.model.Note
-import com.notecraft.model.PAGE_HEIGHT
-import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.ui.NoteCraftViewModel
 import com.notecraft.ui.components.ConfirmDialog
 import com.notecraft.ui.components.NoteThumbnail
+import com.notecraft.ui.components.SettingsDialog
 import com.notecraft.ui.components.TextEntryDialog
+import com.notecraft.ui.theme.InkBlackColor
+import com.notecraft.ui.theme.InkSlate
+import com.notecraft.ui.theme.PaperIvory
+import com.notecraft.ui.theme.notebookToneFor
 import com.notecraft.util.formatNoteDate
 
 private enum class NoteSort(val label: String) {
@@ -90,6 +103,7 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
     var menuNoteId by remember { mutableStateOf<String?>(null) }
     var renameNote by remember { mutableStateOf<Note?>(null) }
     var deleteNote by remember { mutableStateOf<Note?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
 
     val filtered = remember(library.notes, query, sort) {
         library.notes
@@ -113,24 +127,44 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = "NoteCraft",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = if (library.notes.isEmpty()) {
-                                "Your paper, everywhere"
-                            } else {
-                                "${library.notes.size} ${if (library.notes.size == 1) "note" else "notes"} · stored on this device"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(38.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Outlined.Description,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "NoteCraft",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = if (library.notes.isEmpty()) {
+                                    "YOUR PAPER, EVERYWHERE"
+                                } else {
+                                    "${library.notes.size} ${if (library.notes.size == 1) "NOTEBOOK" else "NOTEBOOKS"}"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Outlined.Settings, contentDescription = "Settings")
+                    }
                     IconButton(
                         onClick = {
                             showSearch = !showSearch
@@ -178,13 +212,16 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { viewModel.createNote() },
-                icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
-                text = { Text("New note") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            )
+            if (library.notes.isNotEmpty()) {
+                ExtendedFloatingActionButton(
+                    onClick = { viewModel.createNote() },
+                    icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                    text = { Text("New notebook") },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp),
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
@@ -201,7 +238,7 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .focusRequester(focusRequester),
-                    placeholder = { Text("Search by title") },
+                    placeholder = { Text("Search notebooks") },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
@@ -215,7 +252,13 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                     keyboardActions = KeyboardActions(
                         onSearch = { keyboardController?.hide() },
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    ),
                 )
             }
 
@@ -266,10 +309,10 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
 
                 else -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 150.dp),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 104.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        columns = GridCells.Adaptive(minSize = 156.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
                         items(filtered, key = { it.id }) { note ->
                             NoteCard(
@@ -319,6 +362,10 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
             onConfirm = { viewModel.deleteNote(note.id) },
         )
     }
+
+    if (showSettings) {
+        SettingsDialog(onDismiss = { showSettings = false })
+    }
 }
 
 @Composable
@@ -326,47 +373,87 @@ private fun EmptyLibrary(
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val tone = remember { notebookToneFor("welcome") }
+
     Column(
-        modifier = modifier.padding(32.dp),
+        modifier = modifier.padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.size(104.dp),
+        Box(
+            modifier = Modifier
+                .size(width = 118.dp, height = 152.dp)
+                .shadow(10.dp, RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .background(Brush.linearGradient(listOf(tone.cover, tone.coverDeep))),
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(24.dp),
+            ) {
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        listOf(Color.Black.copy(alpha = 0.20f), Color.Transparent),
+                    ),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 16.dp, top = 14.dp, end = 12.dp, bottom = 14.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(PaperIvory),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
                     Icons.Outlined.Description,
                     contentDescription = null,
-                    modifier = Modifier.size(46.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
                 )
             }
+            Canvas(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 28.dp)
+                    .size(width = 13.dp, height = 38.dp),
+            ) {
+                val notch = 5.dp.toPx()
+                val ribbon = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(size.width, 0f)
+                    lineTo(size.width, size.height)
+                    lineTo(size.width / 2f, size.height - notch)
+                    lineTo(0f, size.height)
+                    close()
+                }
+                drawPath(ribbon, tone.ribbon.copy(alpha = 0.95f))
+            }
         }
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(26.dp))
         Text(
-            text = "A fresh sheet awaits",
+            text = "A fresh notebook awaits",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Sketch, annotate and organize your ideas with pens, pencils, shapes and highlights.",
+            text = "Capture lectures, sketches and ideas with tactile paper, ink and focused tools.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 12.dp),
         )
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(24.dp))
         Surface(
-            shape = RoundedCornerShape(50),
+            shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.clickable(onClick = onCreate),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
@@ -377,7 +464,7 @@ private fun EmptyLibrary(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Create your first note",
+                    text = "Create notebook",
                     color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.labelLarge,
                 )
@@ -397,110 +484,179 @@ private fun NoteCard(
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 1.dp,
+    val tone = remember(note.id) { notebookToneFor(note.id) }
+    val previewPage = remember(note.pages) {
+        note.pages.firstOrNull { !it.isEmpty } ?: note.pages.firstOrNull()
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen),
     ) {
-        Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(3f / 4f)
+                .shadow(6.dp, RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .background(Brush.linearGradient(listOf(tone.cover, tone.coverDeep))),
+        ) {
+            // Spine crease along the binding edge.
+            Canvas(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(26.dp),
+            ) {
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Black.copy(alpha = 0.22f),
+                            Color.Black.copy(alpha = 0.05f),
+                            Color.Transparent,
+                        ),
+                    ),
+                )
+                drawLine(
+                    color = Color.White.copy(alpha = 0.10f),
+                    start = Offset(5.dp.toPx(), 0f),
+                    end = Offset(5.dp.toPx(), size.height),
+                    strokeWidth = 1f,
+                )
+            }
+
+            // Paper page tucked inside the cover.
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(PAGE_WIDTH / PAGE_HEIGHT)
-                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                    .fillMaxSize()
+                    .padding(start = 20.dp, top = 14.dp, end = 12.dp, bottom = 76.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(PaperIvory),
             ) {
                 NoteThumbnail(
-                    page = note.pages.firstOrNull { !it.isEmpty } ?: note.pages.firstOrNull(),
+                    page = previewPage,
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
+
+            // Ribbon bookmark.
+            Canvas(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 34.dp)
+                    .size(width = 14.dp, height = 40.dp),
+            ) {
+                val notch = 5.dp.toPx()
+                val ribbon = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(size.width, 0f)
+                    lineTo(size.width, size.height)
+                    lineTo(size.width / 2f, size.height - notch)
+                    lineTo(0f, size.height)
+                    close()
+                }
+                drawPath(ribbon, tone.ribbon.copy(alpha = 0.95f))
+            }
+
+            // Quick actions.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp),
+            ) {
                 Surface(
-                    shape = RoundedCornerShape(50),
-                    color = Color.Black.copy(alpha = 0.58f),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(8.dp),
+                    shape = CircleShape,
+                    color = PaperIvory.copy(alpha = 0.94f),
+                    shadowElevation = 2.dp,
                 ) {
+                    IconButton(
+                        onClick = onMenuClick,
+                        modifier = Modifier.size(30.dp),
+                    ) {
+                        Icon(
+                            Icons.Outlined.MoreVert,
+                            contentDescription = "Notebook options",
+                            tint = InkBlackColor,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = onMenuDismiss,
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Rename") },
+                        leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
+                        onClick = onRename,
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Duplicate") },
+                        leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                        onClick = onDuplicate,
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = onDelete,
+                    )
+                }
+            }
+
+            // Title label badge, like a notebook sticker.
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 18.dp, bottom = 12.dp, end = 14.dp)
+                    .widthIn(max = 150.dp),
+                shape = RoundedCornerShape(6.dp),
+                color = PaperIvory.copy(alpha = 0.97f),
+                shadowElevation = 2.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = note.title,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = InkBlackColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(1.dp))
                     Text(
                         text = "${note.pageCount} ${if (note.pageCount == 1) "page" else "pages"}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        color = InkSlate,
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp),
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.9f),
-                        shadowElevation = 1.dp,
-                    ) {
-                        IconButton(
-                            onClick = onMenuClick,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                Icons.Outlined.MoreVert,
-                                contentDescription = "Note options",
-                                tint = Color(0xFF3A3742),
-                                modifier = Modifier.size(19.dp),
-                            )
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = onMenuDismiss,
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Rename") },
-                            leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
-                            onClick = onRename,
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Duplicate") },
-                            leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
-                            onClick = onDuplicate,
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Outlined.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            },
-                            onClick = onDelete,
-                        )
-                    }
-                }
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-            ) {
-                Text(
-                    text = note.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = formatNoteDate(note.updatedAt),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = formatNoteDate(note.updatedAt),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "EDITED",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
         }
     }
 }
