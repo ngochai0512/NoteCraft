@@ -26,3 +26,15 @@ Thumbs.db
 # Kotlin / Java
 *.class
 out/
+
+# Kotlin compiler
+.kotlin/
+
+# Native build artifacts
+.externalNativeBuild/
+.cxx/
+
+# Android outputs
+*.apk
+*.aab
+captures/
