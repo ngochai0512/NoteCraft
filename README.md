@@ -70,6 +70,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Adaptive notebook grid, page drawer columns, and scrollable dialogs
 - Material 3 light and dark themes
 - Adaptive launcher icon with a dedicated round icon
+- Display cutout-aware chrome: toolbars, overlays, sheets, and grids stay inside safe insets while the paper remains edge-to-edge
 - Edge-to-edge layout and press-scale tool feedback
 
 ## Requirements
@@ -118,6 +119,20 @@ Or build a release APK (unsigned by default):
 
 ```bash
 ./gradlew assembleRelease
+```
+
+### Testing display cutouts
+
+Simulate a cutout on an emulator or device with Developer options:
+
+```bash
+adb shell cmd overlay enable com.android.internal.display.cutout.emulation.tall
+```
+
+Rotate to landscape and check that the top bar, tool ribbon, zoom controls, page navigator, sheets, and library grid stay clear of the cutout while the editor paper remains edge-to-edge. Disable it with:
+
+```bash
+adb shell cmd overlay disable com.android.internal.display.cutout.emulation.tall
 ```
 
 `local.properties` points Gradle at the Android SDK:

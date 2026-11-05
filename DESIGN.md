@@ -110,6 +110,7 @@
 * The paper fills the entire editor viewport edge-to-edge; there is no desk backdrop, page border, or drop shadow.
 * Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
 * Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
+* Paper is allowed to extend behind display cutouts and system bars, while toolbars, navigation, zoom controls, and sheets inset themselves using `WindowInsets.safeDrawing` / `WindowInsets.displayCutout`.
 
 ### 4. Page Thumbnail & Bookmarks Drawer
 * 2-column or 3-column micro-page grid.
