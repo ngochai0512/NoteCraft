@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -140,17 +141,25 @@ fun EditorToolPanel(
                 horizontal = if (compact) 8.dp else 12.dp,
                 vertical = if (compact) 4.dp else 6.dp,
             ),
+        contentAlignment = Alignment.Center,
     ) {
+        val surfaceModifier = if (wide && compact) {
+            Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth()
+        } else {
+            Modifier.fillMaxWidth()
+        }.border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            shape = RoundedCornerShape(20.dp),
+        )
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
             tonalElevation = 0.dp,
             shadowElevation = 10.dp,
-            modifier = Modifier.border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(20.dp),
-            ),
+            modifier = surfaceModifier,
         ) {
             Column(
                 modifier = Modifier

@@ -63,7 +63,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Design system defined in [DESIGN.md](DESIGN.md)
 - Ink Blue primary, tactile paper surfaces and notebook cover tones
 - Responsive phone and tablet layouts in portrait and landscape
-- Compact icon-only ribbon and horizontal zoom dock in short landscape
+- Compact icon-only ribbon in landscape; horizontal zoom dock in short landscape
 - Adaptive notebook grid, page drawer columns, and scrollable dialogs
 - Material 3 light and dark themes
 - Edge-to-edge layout and press-scale tool feedback

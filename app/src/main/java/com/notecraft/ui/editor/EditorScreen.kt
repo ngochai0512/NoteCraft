@@ -105,6 +105,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val compactHeight = configuration.screenHeightDp < 480
+    val compactTools = compactHeight || isLandscape
     val wideTools = configuration.screenWidthDp >= 600
 
     LaunchedEffect(editor.pageIndex) {
@@ -307,7 +308,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 EditorToolPanel(
                     editor = editor,
                     expandedTool = expandedTool,
-                    compact = compactHeight,
+                    compact = compactTools,
                     wide = wideTools,
                     onToolSelected = selectTool,
                     onDismissOptions = { expandedTool = null },
