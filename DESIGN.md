@@ -100,14 +100,16 @@
 * Realistic ratio (`3:4`) notebook preview with spine binding, leather/matte finish, ribbon bookmark, label badge, and edited timestamp.
 * Quick-action context menu (`...`) for export, duplicate, trash.
 
-### 3. Canvas Paper Sheet
+### 3. Canvas Paper
 * Authentic simulated paper texture with customizable guidelines:
   * Ruled / Lined (8mm spacing)
   * Dotted Grid (5mm spacing)
   * Squared Graph
   * Cornell Notes
   * Blank Paper
-* Subtle paper drop shadow against desk gray background to provide realistic page boundaries.
+* The paper fills the entire editor viewport edge-to-edge; there is no desk backdrop, page border, or drop shadow.
+* Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
+* Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
 
 ### 4. Page Thumbnail & Bookmarks Drawer
 * 2-column or 3-column micro-page grid.

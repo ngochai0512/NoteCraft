@@ -98,19 +98,30 @@ fun DrawScope.drawPageContent(
 }
 
 /**
- * Draws the page pattern inside the paper sheet. The sheet is the full logical page, so the
- * pattern always stops at the paper edge.
+ * Fills the whole visible editor area with the paper surface. Used by the editor so the paper is
+ * edge-to-edge instead of a sheet resting on a desk.
+ */
+fun DrawScope.drawPaperSurface() {
+    drawRect(brush = Brush.verticalGradient(listOf(PaperColor, PaperWarm)))
+}
+
+/**
+ * Draws the page pattern over the supplied screen-space bounds. The pattern stays anchored to the
+ * page [origin], so it pans and zooms with the page while filling the entire viewport.
+ *
+ * Callers that render a page preview pass the page bounds explicitly; the editor passes the full
+ * canvas bounds so the paper appears continuous.
  */
 fun DrawScope.drawPageBackground(
     background: PageBackground,
     scale: Float,
     origin: Offset,
+    left: Float = origin.x,
+    top: Float = origin.y,
+    right: Float = origin.x + PAGE_WIDTH * scale,
+    bottom: Float = origin.y + PAGE_HEIGHT * scale,
 ) {
-    if (scale <= 0f) return
-    val left = origin.x
-    val top = origin.y
-    val right = origin.x + PAGE_WIDTH * scale
-    val bottom = origin.y + PAGE_HEIGHT * scale
+    if (scale <= 0f || right <= left || bottom <= top) return
     when (background) {
         PageBackground.BLANK -> Unit
 
@@ -500,38 +511,6 @@ fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
             paint,
         )
     }
-}
-
-fun DrawScope.drawPaperSheet(scale: Float, origin: Offset) {
-    val pageSize = Size(PAGE_WIDTH * scale, PAGE_HEIGHT * scale)
-    val corner = CornerRadius(3f, 3f)
-    // Layered, soft shadow against the desk backdrop.
-    drawRoundRect(
-        color = Color(0xFF0F172A).copy(alpha = 0.10f),
-        topLeft = Offset(origin.x, origin.y + 6f),
-        size = pageSize,
-        cornerRadius = corner,
-    )
-    drawRoundRect(
-        color = Color(0xFF0F172A).copy(alpha = 0.06f),
-        topLeft = Offset(origin.x, origin.y + 12f),
-        size = pageSize,
-        cornerRadius = corner,
-    )
-    drawRoundRect(
-        brush = Brush.verticalGradient(listOf(PaperColor, PaperWarm)),
-        topLeft = origin,
-        size = pageSize,
-        cornerRadius = corner,
-    )
-    // A hairline keeps the paper edge crisp against the desk.
-    drawRoundRect(
-        color = Color(0xFF0F172A).copy(alpha = 0.06f),
-        topLeft = origin,
-        size = pageSize,
-        cornerRadius = corner,
-        style = DrawStroke(width = 1f),
-    )
 }
 
 fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {    val left = origin.x + bounds.left * scale

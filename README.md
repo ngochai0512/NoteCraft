@@ -27,13 +27,16 @@ UI: Jetpack Compose + Material 3
 - **Text** — place and edit typed notes
 - **Lasso** — select strokes and text to move, duplicate or delete
 
+**Jetpack Ink 1.0.0** powers low-latency authoring for the fountain pen, ball pen, brush pen, and highlighter. Finished Ink strokes are normalized into NoteCraft's page model so persistence, undo/redo, erasing, and lasso selection continue to work with the rest of the app. Pencil, shapes, tape, laser, text, and lasso remain custom.
+
 Tapping a tool selects it and opens that tool's color, size, and shape options in a compact dropdown. Tap the same tool again or touch outside to dismiss it; the ribbon otherwise stays collapsed so the canvas keeps more space.
 
 ### Canvas
 
-- Tactile paper sheet with a soft drop shadow on a neutral desk backdrop
-- Ruled 8 mm, squared graph, dotted 5 mm, Cornell and blank paper
-- Pinch to zoom up to 8× with two-finger pan
+- Edge-to-edge paper that fills the editor; no desk backdrop, page border, or drop shadow
+- Ruled 8 mm, squared graph, dotted 5 mm, Cornell and blank paper drawn continuously across the viewport
+- Draw anywhere on the visible paper, including outside the logical page bounds
+- Pinch to zoom up to 8× with unbounded two-finger pan
 - Floating zoom controls with fit-page, page-thumbnail, and page-background buttons
 - Undo and redo for every canvas, text, selection, and page operation
 
@@ -66,6 +69,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Compact icon-only ribbon in landscape; horizontal zoom dock in short landscape
 - Adaptive notebook grid, page drawer columns, and scrollable dialogs
 - Material 3 light and dark themes
+- Adaptive launcher icon with a dedicated round icon
 - Edge-to-edge layout and press-scale tool feedback
 
 ## Requirements
@@ -86,7 +90,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 4. Create or select an emulator in **Tools → Device Manager**:
    - API 36 system image
    - `arm64-v8a` on Apple Silicon
-   - Any phone profile works; the app is portrait-first
+   - Any phone profile works; the app supports portrait and landscape. Enable **Auto-rotate** in the emulator/device quick settings to rotate with the sensor.
 5. Select the `app` run configuration and click **Run ▶**.
 
 ### Build from the terminal
@@ -203,6 +207,8 @@ Saving is debounced while editing, then flushed when the editor closes or the ap
 - **Drawing** is rendered directly on a Compose `Canvas`; no bitmap layers are created.
 - **Gestures** use `awaitEachGesture` with a custom state machine so one-finger drawing and two-finger zoom/pan work together.
 - **Tool preferences** are stored in `SharedPreferences` under `notecraft_tool_prefs`.
+- **Ink authoring** uses `androidx.ink:ink-authoring-compose` for fountain, ball, brush, and highlighter tools. Wet strokes are rendered by `InProgressStrokes`; finished strokes are converted to immutable NoteCraft strokes and handed to the existing page state, so the downstream canvas, persistence, history, eraser, and lasso remain the source of truth.
+- **Native Ink** requires the Ink native loader libraries, which are packaged for all supported ABIs in the APK.
 
 ## Known limitations
 
@@ -214,13 +220,15 @@ This is intentionally a compact version of a full note-taking app:
 - Notes are local to the device; there is no sync, export, or cloud backup.
 - Pages are navigated with the page controls and thumbnail drawer rather than a continuous swipe canvas.
 - Bookmarks, media insertion and drag-and-drop page reordering are not implemented yet.
+- Ink is used for authoring and wet rendering; dry strokes still use NoteCraft's renderer, so wet and dry Ink strokes can differ slightly.
+- Pencil, shape, tape, laser, text, and lasso interactions remain custom.
 
 ## Design system
 
 The interface follows [DESIGN.md](DESIGN.md):
 
 - **Brand**: Ink Blue `#2563EB`, with Focus Azure containers
-- **Paper**: `#FCFCFA` / `#FBF8F1` sheets on a `#F3F4F6` desk
+- **Paper**: `#FCFCFA` / `#FBF8F1` fill that covers the entire editor
 - **Ink and text**: `#0F172A`, `#475569`, `#94A3B8`
 - **Accents**: highlighter yellow `#FEF08A`, mint `#10B981`, tag purple `#8B5CF6`
 - **Covers**: Navy Leather, Terracotta, Forest Sage, Pastel Lavender and Charcoal

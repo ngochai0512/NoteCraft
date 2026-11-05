@@ -37,21 +37,20 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.notecraft.model.PAGE_HEIGHT
@@ -63,13 +62,19 @@ import com.notecraft.model.Stroke as InkStroke
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.model.newId
-import com.notecraft.ui.theme.DeskBackdrop
 import com.notecraft.util.hitTest
 import com.notecraft.util.selectInsidePolygon
 import com.notecraft.util.selectionBounds
+import com.notecraft.ui.theme.PaperSurface
+import androidx.ink.authoring.compose.InProgressStrokes
+import androidx.ink.brush.Brush as InkApiBrush
+import androidx.ink.brush.SelfOverlap
+import androidx.ink.brush.StockBrushes
+import androidx.ink.strokes.Stroke as InkApiStroke
+import android.util.Log
 import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 private data class CanvasTransform(val scale: Float, val origin: Offset)
@@ -80,6 +85,14 @@ private class CanvasViewport {
 }
 
 private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, LASSO, MOVE, LASER }
+
+/** Freehand tools rendered through Jetpack Ink while authoring. */
+private val InkToolTypes = setOf(
+    ToolType.FOUNTAIN_PEN,
+    ToolType.BALL_PEN,
+    ToolType.BRUSH_PEN,
+    ToolType.HIGHLIGHTER,
+)
 
 @Composable
 fun DrawingCanvas(
@@ -104,16 +117,8 @@ fun DrawingCanvas(
     onShowPageBackground: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
     val configuration = LocalConfiguration.current
     val compactHeight = configuration.screenHeightDp < 480
-    val tabletWidth = configuration.smallestScreenWidthDp >= 600
-    val pagePaddingDp = when {
-        compactHeight -> 8.dp
-        tabletWidth -> 28.dp
-        else -> 18.dp
-    }
-    val pagePadding = with(density) { pagePaddingDp.toPx() }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val viewport = remember(page.id) { CanvasViewport() }
     var previewStroke by remember { mutableStateOf<InkStroke?>(null) }
@@ -156,9 +161,7 @@ fun DrawingCanvas(
 
     fun baseScale(size: IntSize): Float {
         if (size.width == 0 || size.height == 0) return 1f
-        val availableWidth = (size.width - pagePadding * 2f).coerceAtLeast(1f)
-        val availableHeight = (size.height - pagePadding * 2f).coerceAtLeast(1f)
-        return min(availableWidth / PAGE_WIDTH, availableHeight / PAGE_HEIGHT)
+        return min(size.width / PAGE_WIDTH, size.height / PAGE_HEIGHT)
     }
 
     fun currentTransform(): CanvasTransform {
@@ -176,19 +179,8 @@ fun DrawingCanvas(
         return (position - transform.origin) / transform.scale
     }
 
-    fun isInsidePage(point: Offset): Boolean =
-        point.x in 0f..PAGE_WIDTH && point.y in 0f..PAGE_HEIGHT
-
-    fun clampPan(candidate: Offset, zoom: Float): Offset {
-        if (canvasSize.width == 0 || canvasSize.height == 0) return candidate
-        val scale = baseScale(canvasSize) * zoom
-        val maxX = max(0f, (PAGE_WIDTH * scale - canvasSize.width) / 2f + pagePadding)
-        val maxY = max(0f, (PAGE_HEIGHT * scale - canvasSize.height) / 2f + pagePadding)
-        return Offset(
-            candidate.x.coerceIn(-maxX, maxX),
-            candidate.y.coerceIn(-maxY, maxY),
-        )
-    }
+    // The paper is effectively infinite, so strokes are accepted anywhere on the canvas.
+    fun isInsidePage(point: Offset): Boolean = true
 
     fun applyTransform(focus: Offset, panChange: Offset, zoomChange: Float) {
         if (canvasSize.width == 0 || canvasSize.height == 0) return
@@ -202,7 +194,7 @@ fun DrawingCanvas(
             focus.y - focusInPage.y * newScale - (canvasSize.height - PAGE_HEIGHT * newScale) / 2f,
         )
         viewport.zoom = newZoom
-        viewport.pan = clampPan(candidate, newZoom)
+        viewport.pan = candidate
     }
 
     fun zoomBy(factor: Float) {
@@ -219,22 +211,48 @@ fun DrawingCanvas(
         viewport.pan = Offset.Zero
     }
 
-    LaunchedEffect(canvasSize) {
-        if (canvasSize.width > 0 && canvasSize.height > 0) {
-            viewport.pan = clampPan(viewport.pan, viewport.zoom)
-        }
-    }
-
     val hintBackground = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
     val hintText = MaterialTheme.colorScheme.onSurfaceVariant
-    val canvasColor = MaterialTheme.colorScheme.background
-    val deskTop = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    val inkTransform = currentTransform()
+    val inkScale = inkTransform.scale
+    val inkBrush = if (tool in InkToolTypes) {
+        remember(tool, color, width, inkScale) {
+            runCatching { createInkBrush(tool, color, width, inkScale) }
+                .onFailure { Log.e("NoteCraftInk", "Unable to initialize Ink brush", it) }
+                .getOrNull()
+        }
+    } else {
+        null
+    }
+    val useInk = inkBrush != null
+    val inkTransformModifier = if (useInk) {
+        Modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.changes.count { it.pressed } > 1) {
+                        val zoomChange = event.calculateZoom()
+                        val panChange = event.calculatePan()
+                        val centroid = event.calculateCentroid(useCurrent = true)
+                        if (centroid != Offset.Unspecified && (zoomChange != 1f || panChange != Offset.Zero)) {
+                            applyTransform(centroid, panChange, zoomChange)
+                        }
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
+        }
+    } else {
+        Modifier
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(canvasColor)
-            .onSizeChanged { canvasSize = it },
+            .clipToBounds()
+            .background(PaperSurface)
+            .onSizeChanged { canvasSize = it }
+            .then(inkTransformModifier),
     ) {
         Canvas(
             modifier = Modifier
@@ -243,6 +261,17 @@ fun DrawingCanvas(
                     val touchSlop = viewConfiguration.touchSlop
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+
+                        if (useInk) {
+                            // The Ink overlay owns the wet stroke. Wait out the gesture without
+                            // consuming so it remains available to InProgressStrokes.
+                            var event = awaitPointerEvent()
+                            while (event.changes.any { it.pressed }) {
+                                event = awaitPointerEvent()
+                            }
+                            return@awaitEachGesture
+                        }
+
                         val downPage = screenToPage(down.position)
                         var mode = GestureMode.NONE
                         var points = mutableListOf<Pt>()
@@ -479,42 +508,55 @@ fun DrawingCanvas(
                     }
                 },
         ) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    listOf(deskTop, canvasColor),
-                ),
-            )
+            drawPaperSurface()
 
             val transform = currentTransform()
             if (transform.scale > 0f) {
-                drawPaperSheet(transform.scale, transform.origin)
-                clipRect(
-                    left = transform.origin.x,
-                    top = transform.origin.y,
-                    right = transform.origin.x + PAGE_WIDTH * transform.scale,
-                    bottom = transform.origin.y + PAGE_HEIGHT * transform.scale,
-                ) {
-                    drawPageBackground(page.background, transform.scale, transform.origin)
-                    drawPageContent(
-                        page = page,
-                        scale = transform.scale,
-                        origin = transform.origin,
-                        selectedStrokeIds = selectedStrokeIds,
-                        selectedTextIds = selectedTextIds,
-                        drawSelection = true,
-                        drawPaper = false,
-                        drawBackground = false,
-                        clip = false,
-                    )
+                drawPageBackground(
+                    background = page.background,
+                    scale = transform.scale,
+                    origin = transform.origin,
+                    left = 0f,
+                    top = 0f,
+                    right = size.width,
+                    bottom = size.height,
+                )
+                drawPageContent(
+                    page = page,
+                    scale = transform.scale,
+                    origin = transform.origin,
+                    selectedStrokeIds = selectedStrokeIds,
+                    selectedTextIds = selectedTextIds,
+                    drawSelection = true,
+                    drawPaper = false,
+                    drawBackground = false,
+                    clip = false,
+                )
 
-                    previewStroke?.let { stroke ->
-                        drawStrokeBody(stroke, transform.scale, transform.origin)
-                    }
-
-                    drawLaserTrail(laserPoints, transform)
-                    drawLassoPreview(lassoPreview, transform)
+                previewStroke?.let { stroke ->
+                    drawStrokeBody(stroke, transform.scale, transform.origin)
                 }
+
+                drawLaserTrail(laserPoints, transform)
+                drawLassoPreview(lassoPreview, transform)
             }
+        }
+
+        if (useInk && inkBrush != null && inkScale > 0f) {
+            InProgressStrokes(
+                defaultBrush = inkBrush,
+                onStrokesFinished = { strokes ->
+                    strokes.forEach { inkStroke ->
+                        inkStroke.toNoteCraftStroke(
+                            tool = tool,
+                            color = color,
+                            width = width,
+                            scale = inkScale,
+                            origin = inkTransform.origin,
+                        )?.let { converted -> commitStroke(converted) }
+                    }
+                },
+            )
         }
 
         Column(
@@ -665,6 +707,66 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLaserTrail(
         path = path,
         color = Color(0xFFEF4444).copy(alpha = 0.85f),
         style = DrawStroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+    )
+}
+
+private fun createInkBrush(
+    tool: ToolType,
+    color: Long,
+    width: Float,
+    scale: Float,
+): InkApiBrush? {
+    if (scale <= 0f) return null
+    val family = when (tool) {
+        ToolType.FOUNTAIN_PEN -> StockBrushes.pressurePen()
+        ToolType.BALL_PEN -> StockBrushes.marker()
+        ToolType.BRUSH_PEN -> StockBrushes.pressurePen()
+        ToolType.HIGHLIGHTER -> StockBrushes.highlighter(SelfOverlap.DISCARD)
+        else -> return null
+    }
+    val argb = color.toInt()
+    val inkColor = if (tool == ToolType.HIGHLIGHTER) {
+        val alpha = (((argb ushr 24) and 0xFF) * 0.30f).roundToInt().coerceIn(1, 255)
+        (argb and 0x00FFFFFF) or (alpha shl 24)
+    } else {
+        argb
+    }
+    val sizePx = (width * scale).coerceAtLeast(0.75f)
+    return InkApiBrush.createWithColorIntArgb(family, inkColor, sizePx, 0.1f)
+}
+
+private fun InkApiStroke.toNoteCraftStroke(
+    tool: ToolType,
+    color: Long,
+    width: Float,
+    scale: Float,
+    origin: Offset,
+): InkStroke? {
+    if (scale <= 0f || inputs.size == 0) return null
+    val points = ArrayList<Pt>(inputs.size)
+    for (index in 0 until inputs.size) {
+        val input = inputs[index]
+        if (!input.x.isFinite() || !input.y.isFinite()) continue
+        val x = (input.x - origin.x) / scale
+        val y = (input.y - origin.y) / scale
+        val pressure = if (input.hasPressure) {
+            input.pressure.coerceIn(0.15f, 1f)
+        } else {
+            0.5f
+        }
+        if (points.isEmpty() || hypot(x - points.last().x, y - points.last().y) >= 0.4f) {
+            points.add(Pt(x, y, pressure))
+        }
+    }
+    if (points.isEmpty()) return null
+    val id = newId()
+    return InkStroke(
+        id = id,
+        tool = tool,
+        color = color,
+        width = width,
+        points = points,
+        seed = id.hashCode(),
     )
 }
 

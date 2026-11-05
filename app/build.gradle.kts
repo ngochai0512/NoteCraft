@@ -64,5 +64,9 @@ dependencies {
     implementation("androidx.compose.material:material-ripple:1.8.2")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
 
+    implementation("androidx.ink:ink-authoring-compose:1.0.0")
+    implementation("androidx.ink:ink-brush:1.0.0")
+    implementation("androidx.ink:ink-strokes:1.0.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling:1.9.2")
 }
