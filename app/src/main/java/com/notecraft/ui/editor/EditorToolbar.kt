@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,8 +77,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import com.notecraft.model.PrimaryTools
 import com.notecraft.model.SecondaryTools
 import com.notecraft.model.ShapeType
@@ -109,6 +119,8 @@ private fun toolIcon(tool: ToolType): ImageVector = when (tool) {
 fun EditorToolPanel(
     editor: EditorState,
     expandedTool: ToolType?,
+    compact: Boolean,
+    wide: Boolean,
     onToolSelected: (ToolType) -> Unit,
     onDismissOptions: () -> Unit,
     onColorSelected: (Long) -> Unit,
@@ -124,7 +136,10 @@ fun EditorToolPanel(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(
+                horizontal = if (compact) 8.dp else 12.dp,
+                vertical = if (compact) 4.dp else 6.dp,
+            ),
     ) {
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -140,7 +155,10 @@ fun EditorToolPanel(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 7.dp)
+                    .padding(
+                        horizontal = 8.dp,
+                        vertical = if (compact) 4.dp else 7.dp,
+                    )
                     .animateContentSize(
                         animationSpec = tween(durationMillis = 220),
                     ),
@@ -148,12 +166,15 @@ fun EditorToolPanel(
                 ToolRow(
                     selectedTool = editor.tool,
                     expandedTool = expandedTool,
+                    compact = compact,
+                    wide = wide,
                     onToolSelected = onToolSelected,
                     onDismissOptions = onDismissOptions,
                     onMoreMenuVisibilityChanged = onMoreMenuVisibilityChanged,
                     optionsContent = { _ ->
                         ToolOptions(
                             editor = editor,
+                            compact = compact,
                             onColorSelected = onColorSelected,
                             onWidthChange = onWidthChange,
                             onShapeSelected = onShapeSelected,
@@ -183,6 +204,8 @@ fun EditorToolPanel(
 private fun ToolRow(
     selectedTool: ToolType,
     expandedTool: ToolType?,
+    compact: Boolean,
+    wide: Boolean,
     onToolSelected: (ToolType) -> Unit,
     onDismissOptions: () -> Unit,
     onMoreMenuVisibilityChanged: (Boolean) -> Unit,
@@ -190,12 +213,21 @@ private fun ToolRow(
 ) {
     var showMore by remember { mutableStateOf(false) }
     val secondarySelected = selectedTool in SecondaryTools
+    val rowModifier = if (wide) {
+        Modifier.fillMaxWidth()
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+    }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = rowModifier,
+        horizontalArrangement = if (wide) {
+            Arrangement.SpaceEvenly
+        } else {
+            Arrangement.spacedBy(2.dp)
+        },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PrimaryTools.forEach { tool ->
@@ -203,6 +235,7 @@ private fun ToolRow(
                 ToolButton(
                     tool = tool,
                     selected = tool == selectedTool,
+                    showLabel = !compact,
                     onClick = {
                         showMore = false
                         onToolSelected(tool)
@@ -249,16 +282,18 @@ private fun ToolRow(
                         modifier = Modifier.size(19.dp),
                     )
                 }
-                Text(
-                    text = "More",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (secondarySelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    maxLines = 1,
-                )
+                if (!compact) {
+                    Text(
+                        text = "More",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (secondarySelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                    )
+                }
             }
             DropdownMenu(
                 expanded = showMore,
@@ -302,22 +337,62 @@ private fun ToolOptionsMenu(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    DropdownMenu(
-        expanded = expanded,
+    if (!expanded) return
+
+    val configuration = LocalConfiguration.current
+    val maxHeight = if (configuration.screenHeightDp < 480) 176.dp else 440.dp
+    val marginPx = with(LocalDensity.current) { 8.dp.roundToPx() }
+    val positionProvider = remember {
+        BelowAnchorPopupPositionProvider(marginPx)
+    }
+
+    Popup(
+        popupPositionProvider = positionProvider,
         onDismissRequest = onDismiss,
-        modifier = Modifier.width(300.dp),
+        properties = PopupProperties(focusable = true),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 0.dp,
+            shadowElevation = 12.dp,
+            modifier = Modifier.border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(16.dp),
+            ),
         ) {
-            Text(
-                text = toolShortLabel(tool).uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp),
-            )
-            content()
+            Column(
+                modifier = Modifier
+                    .width(300.dp)
+                    .heightIn(max = maxHeight)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = toolShortLabel(tool).uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+                content()
+            }
         }
+    }
+}
+
+private class BelowAnchorPopupPositionProvider(
+    private val marginPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val maxX = (windowSize.width - popupContentSize.width - marginPx).coerceAtLeast(marginPx)
+        val x = anchorBounds.left.coerceIn(marginPx, maxX)
+        return IntOffset(x, anchorBounds.bottom + marginPx)
     }
 }
 
@@ -325,6 +400,7 @@ private fun ToolOptionsMenu(
 private fun ToolButton(
     tool: ToolType,
     selected: Boolean,
+    showLabel: Boolean,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -341,7 +417,7 @@ private fun ToolButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(44.dp)
+            .width(if (showLabel) 44.dp else 40.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -375,17 +451,19 @@ private fun ToolButton(
                 modifier = Modifier.size(19.dp),
             )
         }
-        Text(
-            text = toolShortLabel(tool),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
-        )
+        if (showLabel) {
+            Text(
+                text = toolShortLabel(tool),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+            )
+        }
     }
 }
 
@@ -401,6 +479,7 @@ private fun toolShortLabel(tool: ToolType): String = when (tool) {
 @Composable
 private fun ToolOptions(
     editor: EditorState,
+    compact: Boolean,
     onColorSelected: (Long) -> Unit,
     onWidthChange: (Float) -> Unit,
     onShapeSelected: (ShapeType) -> Unit,
@@ -464,25 +543,47 @@ private fun ToolOptions(
         }
 
         val customColor = editor.color !in InkPalette
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            val rows = InkPalette.chunked(6)
-            rows.forEachIndexed { index, row ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    row.forEach { swatch ->
-                        ColorSwatch(
-                            color = swatch,
-                            selected = editor.color == swatch,
-                            onClick = { onColorSelected(swatch) },
-                        )
-                    }
-                    if (index == rows.lastIndex) {
-                        CustomColorSwatch(
-                            selected = customColor,
-                            onClick = onOpenColorPicker,
-                        )
+        if (compact) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InkPalette.forEach { swatch ->
+                    ColorSwatch(
+                        color = swatch,
+                        selected = editor.color == swatch,
+                        onClick = { onColorSelected(swatch) },
+                    )
+                }
+                CustomColorSwatch(
+                    selected = customColor,
+                    onClick = onOpenColorPicker,
+                )
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val rows = InkPalette.chunked(6)
+                rows.forEachIndexed { index, row ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        row.forEach { swatch ->
+                            ColorSwatch(
+                                color = swatch,
+                                selected = editor.color == swatch,
+                                onClick = { onColorSelected(swatch) },
+                            )
+                        }
+                        if (index == rows.lastIndex) {
+                            CustomColorSwatch(
+                                selected = customColor,
+                                onClick = onOpenColorPicker,
+                            )
+                        }
                     }
                 }
             }
@@ -532,25 +633,48 @@ private fun ToolOptions(
         }
 
         if (editor.tool == ToolType.SHAPE) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ShapeType.entries.chunked(2).forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        row.forEach { shape ->
-                            FilterChip(
-                                selected = editor.shapeType == shape,
-                                onClick = { onShapeSelected(shape) },
-                                label = { Text(shape.label) },
-                                modifier = Modifier.weight(1f),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                ),
-                            )
+            if (compact) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ShapeType.entries.forEach { shape ->
+                        FilterChip(
+                            selected = editor.shapeType == shape,
+                            onClick = { onShapeSelected(shape) },
+                            label = { Text(shape.label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    }
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ShapeType.entries.chunked(2).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            row.forEach { shape ->
+                                FilterChip(
+                                    selected = editor.shapeType == shape,
+                                    onClick = { onShapeSelected(shape) },
+                                    label = { Text(shape.label) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                )
+                            }
                         }
                     }
                 }

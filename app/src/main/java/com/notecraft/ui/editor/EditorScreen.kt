@@ -1,5 +1,6 @@
 package com.notecraft.ui.editor
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.GridOn
-import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,6 +100,12 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
     var showToolMenu by remember { mutableStateOf(false) }
     val pageSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptic = LocalHapticFeedback.current
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val compactHeight = configuration.screenHeightDp < 480
+    val wideTools = configuration.screenWidthDp >= 600
 
     LaunchedEffect(editor.pageIndex) {
         expandedTool = null
@@ -165,7 +172,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                         .background(MintGreen),
                                 )
                                 Text(
-                                    text = "PAGE ${editor.pageIndex + 1} / ${editor.note.pageCount} · SAVED",
+                                    text = "SAVED · ${editor.note.pageCount} " +
+                                        if (editor.note.pageCount == 1) "PAGE" else "PAGES",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -299,6 +307,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 EditorToolPanel(
                     editor = editor,
                     expandedTool = expandedTool,
+                    compact = compactHeight,
+                    wide = wideTools,
                     onToolSelected = selectTool,
                     onDismissOptions = { expandedTool = null },
                     onColorSelected = viewModel::setToolColor,
@@ -323,38 +333,59 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            PageNavigator(
-                pageIndex = editor.pageIndex,
-                pageCount = editor.note.pageCount,
-                onPrevious = { viewModel.goToPage(editor.pageIndex - 1) },
-                onNext = { viewModel.goToPage(editor.pageIndex + 1) },
-                onBackground = { showBackgroundDialog = true },
-                onPages = { showPageDrawer = true },
-            )
-            DrawingCanvas(
-                page = editor.page,
-                tool = editor.tool,
-                color = editor.color,
-                width = editor.width,
-                shapeType = editor.shapeType,
-                selectedStrokeIds = editor.selectedStrokeIds,
-                selectedTextIds = editor.selectedTextIds,
-                onStrokeCommitted = { stroke ->
-                    if (stroke.tool in PersistentTools) viewModel.addStroke(stroke)
-                },
-                onEraseStart = viewModel::beginErase,
-                onEraseMove = { point -> viewModel.eraseAt(point.x, point.y) },
-                onEraseEnd = viewModel::endErase,
-                onLassoSelected = viewModel::setSelection,
-                onSelectionMoveStart = viewModel::beginSelectionMove,
-                onSelectionMove = { delta -> viewModel.moveSelection(delta.x, delta.y) },
-                onSelectionMoveEnd = viewModel::endSelectionMove,
-                onAddText = { point -> textDialogTarget = TextDialogTarget.New(point) },
-                onEditText = { item -> textDialogTarget = TextDialogTarget.Edit(item) },
+            if (!isLandscape) {
+                PageNavigator(
+                    pageIndex = editor.pageIndex,
+                    pageCount = editor.note.pageCount,
+                    onPrevious = { viewModel.goToPage(editor.pageIndex - 1) },
+                    onNext = { viewModel.goToPage(editor.pageIndex + 1) },
+                    modifier = Modifier.padding(
+                        horizontal = if (isTablet) 16.dp else 12.dp,
+                        vertical = 8.dp,
+                    ),
+                )
+            }
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-            )
+            ) {
+                DrawingCanvas(
+                    page = editor.page,
+                    tool = editor.tool,
+                    color = editor.color,
+                    width = editor.width,
+                    shapeType = editor.shapeType,
+                    selectedStrokeIds = editor.selectedStrokeIds,
+                    selectedTextIds = editor.selectedTextIds,
+                    onStrokeCommitted = { stroke ->
+                        if (stroke.tool in PersistentTools) viewModel.addStroke(stroke)
+                    },
+                    onEraseStart = viewModel::beginErase,
+                    onEraseMove = { point -> viewModel.eraseAt(point.x, point.y) },
+                    onEraseEnd = viewModel::endErase,
+                    onLassoSelected = viewModel::setSelection,
+                    onSelectionMoveStart = viewModel::beginSelectionMove,
+                    onSelectionMove = { delta -> viewModel.moveSelection(delta.x, delta.y) },
+                    onSelectionMoveEnd = viewModel::endSelectionMove,
+                    onAddText = { point -> textDialogTarget = TextDialogTarget.New(point) },
+                    onEditText = { item -> textDialogTarget = TextDialogTarget.Edit(item) },
+                    onShowPages = { showPageDrawer = true },
+                    onShowPageBackground = { showBackgroundDialog = true },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (isLandscape) {
+                    PageNavigator(
+                        pageIndex = editor.pageIndex,
+                        pageCount = editor.note.pageCount,
+                        onPrevious = { viewModel.goToPage(editor.pageIndex - 1) },
+                        onNext = { viewModel.goToPage(editor.pageIndex + 1) },
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(12.dp),
+                    )
+                }
+            }
         }
     }
 
@@ -479,18 +510,14 @@ private fun PageNavigator(
     pageCount: Int,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    onBackground: () -> Unit,
-    onPages: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(16.dp),
-            ),
+        modifier = modifier.border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            shape = RoundedCornerShape(16.dp),
+        ),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
         tonalElevation = 0.dp,
@@ -498,7 +525,6 @@ private fun PageNavigator(
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
                 .height(42.dp)
                 .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -514,11 +540,6 @@ private fun PageNavigator(
                     modifier = Modifier.size(21.dp),
                 )
             }
-            Text(
-                text = "PAGE ${pageIndex + 1} / $pageCount",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             IconButton(
                 onClick = onNext,
                 enabled = pageIndex < pageCount - 1,
@@ -528,45 +549,6 @@ private fun PageNavigator(
                     Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = "Next page",
                     modifier = Modifier.size(21.dp),
-                )
-            }
-            Spacer(Modifier.width(4.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
-                // Page dots, capped so a very long note stays readable.
-                val visibleCount = pageCount.coerceAtMost(5)
-                val start = (pageIndex - visibleCount / 2).coerceIn(0, (pageCount - visibleCount).coerceAtLeast(0))
-                repeat(visibleCount) { offset ->
-                    val index = start + offset
-                    Box(
-                        modifier = Modifier
-                            .size(if (index == pageIndex) 7.dp else 5.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (index == pageIndex) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                                },
-                            ),
-                    )
-                }
-            }
-            IconButton(onClick = onPages, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Outlined.GridView,
-                    contentDescription = "Page thumbnails",
-                    modifier = Modifier.size(19.dp),
-                )
-            }
-            IconButton(onClick = onBackground, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Outlined.GridOn,
-                    contentDescription = "Page background",
-                    modifier = Modifier.size(19.dp),
                 )
             }
         }
@@ -580,7 +562,15 @@ private fun PageDrawer(
     onSelect: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
-    val rows = (pages.size + 1 + 2) / 3
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val columns = when {
+        isTablet -> minOf(6, maxOf(3, configuration.screenWidthDp / 120))
+        isLandscape -> 4
+        else -> 3
+    }
+    val maxGridHeight = if (configuration.screenHeightDp < 480) 220.dp else 440.dp
 
     Column(
         modifier = Modifier
@@ -606,14 +596,15 @@ private fun PageDrawer(
         Spacer(Modifier.height(12.dp))
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val gap = 10.dp
-            val cellWidth = (maxWidth - gap * 2f) / 3f
+            val cellWidth = (maxWidth - gap * (columns - 1).toFloat()) / columns.toFloat()
             val tileHeight = cellWidth * (PAGE_HEIGHT / PAGE_WIDTH) + 18.dp
+            val rows = (pages.size + 1 + columns - 1) / columns
             val gridHeight = minOf(
                 tileHeight * rows.toFloat() + gap * (rows - 1).toFloat(),
-                440.dp,
+                maxGridHeight,
             )
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Fixed(columns),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(gridHeight),

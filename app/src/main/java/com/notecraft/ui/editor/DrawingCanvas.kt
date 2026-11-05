@@ -11,12 +11,15 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FitScreen
+import androidx.compose.material.icons.outlined.GridOn
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.ZoomIn
 import androidx.compose.material.icons.outlined.ZoomOut
 import androidx.compose.material3.Icon
@@ -43,9 +46,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -95,10 +100,20 @@ fun DrawingCanvas(
     onSelectionMoveEnd: () -> Unit,
     onAddText: (Offset) -> Unit,
     onEditText: (TextItem) -> Unit,
+    onShowPages: () -> Unit,
+    onShowPageBackground: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val pagePadding = with(density) { 18.dp.toPx() }
+    val configuration = LocalConfiguration.current
+    val compactHeight = configuration.screenHeightDp < 480
+    val tabletWidth = configuration.smallestScreenWidthDp >= 600
+    val pagePaddingDp = when {
+        compactHeight -> 8.dp
+        tabletWidth -> 28.dp
+        else -> 18.dp
+    }
+    val pagePadding = with(density) { pagePaddingDp.toPx() }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val viewport = remember(page.id) { CanvasViewport() }
     var previewStroke by remember { mutableStateOf<InkStroke?>(null) }
@@ -202,6 +217,12 @@ fun DrawingCanvas(
     fun resetViewport() {
         viewport.zoom = 1f
         viewport.pan = Offset.Zero
+    }
+
+    LaunchedEffect(canvasSize) {
+        if (canvasSize.width > 0 && canvasSize.height > 0) {
+            viewport.pan = clampPan(viewport.pan, viewport.zoom)
+        }
     }
 
     val hintBackground = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
@@ -514,34 +535,86 @@ fun DrawingCanvas(
                     shape = RoundedCornerShape(16.dp),
                 ),
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    IconButton(onClick = { zoomBy(1.3f) }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Outlined.ZoomIn,
-                            contentDescription = "Zoom in",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
+                if (compactHeight) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ZoomControlButton(
+                            icon = Icons.Outlined.ZoomOut,
+                            description = "Zoom out",
+                            onClick = { zoomBy(1f / 1.3f) },
+                        )
+                        Text(
+                            text = "${(viewport.zoom * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 2.dp),
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.ZoomIn,
+                            description = "Zoom in",
+                            onClick = { zoomBy(1.3f) },
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.FitScreen,
+                            description = "Reset view",
+                            onClick = ::resetViewport,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp)
+                                .size(width = 1.dp, height = 20.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant),
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.GridView,
+                            description = "Page thumbnails",
+                            onClick = onShowPages,
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.GridOn,
+                            description = "Page background",
+                            onClick = onShowPageBackground,
                         )
                     }
-                    Text(
-                        text = "${(viewport.zoom * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    IconButton(onClick = { zoomBy(1f / 1.3f) }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Outlined.ZoomOut,
-                            contentDescription = "Zoom out",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        ZoomControlButton(
+                            icon = Icons.Outlined.ZoomIn,
+                            description = "Zoom in",
+                            onClick = { zoomBy(1.3f) },
                         )
-                    }
-                    IconButton(onClick = ::resetViewport, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Outlined.FitScreen,
-                            contentDescription = "Reset view",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
+                        Text(
+                            text = "${(viewport.zoom * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.ZoomOut,
+                            description = "Zoom out",
+                            onClick = { zoomBy(1f / 1.3f) },
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.FitScreen,
+                            description = "Reset view",
+                            onClick = ::resetViewport,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(vertical = 4.dp)
+                                .size(width = 20.dp, height = 1.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant),
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.GridView,
+                            description = "Page thumbnails",
+                            onClick = onShowPages,
+                        )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.GridOn,
+                            description = "Page background",
+                            onClick = onShowPageBackground,
                         )
                     }
                 }
@@ -595,11 +668,26 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLaserTrail(
     )
 }
 
+@Composable
+private fun ZoomControlButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLassoPreview(
     points: List<Pt>,
     transform: CanvasTransform,
-) {
-    if (points.size < 2) return
+) {    if (points.size < 2) return
     val path = Path()
     points.forEachIndexed { index, point ->
         val screen = Offset(transform.origin.x + point.x * transform.scale, transform.origin.y + point.y * transform.scale)

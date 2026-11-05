@@ -2,11 +2,16 @@ package com.notecraft.ui.editor
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.notecraft.model.PageBackground
 import com.notecraft.ui.theme.PaperSurface
@@ -33,44 +40,62 @@ fun PageBackgroundDialog(
     onDismiss: () -> Unit,
     onSelect: (PageBackground) -> Unit,
 ) {
+    val compact = LocalConfiguration.current.screenHeightDp < 480
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Page background") },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     text = "Choose the paper that suits this page.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-                PageBackground.entries.forEach { background ->
+                if (compact) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onSelect(background) }
-                            .padding(vertical = 5.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
                     ) {
-                        Canvas(
-                            modifier = Modifier
-                                .size(width = 36.dp, height = 50.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(PaperSurface),
-                        ) {
-                            drawBackgroundPreview(background)
+                        PageBackground.entries.forEach { background ->
+                            CompactBackgroundTile(
+                                background = background,
+                                selected = current == background,
+                                onClick = { onSelect(background) },
+                            )
                         }
-                        Spacer(Modifier.width(14.dp))
-                        Text(
-                            text = background.label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f),
-                        )
-                        RadioButton(
-                            selected = current == background,
-                            onClick = { onSelect(background) },
-                        )
+                    }
+                } else {
+                    PageBackground.entries.forEach { background ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onSelect(background) }
+                                .padding(vertical = 5.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Canvas(
+                                modifier = Modifier
+                                    .size(width = 36.dp, height = 50.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(PaperSurface),
+                            ) {
+                                drawBackgroundPreview(background)
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Text(
+                                text = background.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f),
+                            )
+                            RadioButton(
+                                selected = current == background,
+                                onClick = { onSelect(background) },
+                            )
+                        }
                     }
                 }
             }
@@ -81,6 +106,53 @@ fun PageBackgroundDialog(
             }
         },
     )
+}
+
+@Composable
+private fun CompactBackgroundTile(
+    background: PageBackground,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(70.dp)
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 58.dp, height = 82.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(PaperSurface)
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant
+                    },
+                    shape = RoundedCornerShape(6.dp),
+                ),
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawBackgroundPreview(background)
+            }
+        }
+        Spacer(Modifier.size(4.dp))
+        Text(
+            text = background.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+        )
+    }
 }
 
 /** Simplified, high-contrast paper previews for the background picker. */

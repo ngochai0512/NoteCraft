@@ -1,5 +1,6 @@
 package com.notecraft.ui.library
 
+import android.content.res.Configuration
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,6 +69,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -104,6 +106,16 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
     var renameNote by remember { mutableStateOf<Note?>(null) }
     var deleteNote by remember { mutableStateOf<Note?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val gridMinWidth = when {
+        isTablet -> 240.dp
+        isLandscape -> 140.dp
+        else -> 156.dp
+    }
+    val screenPadding = if (isTablet) 24.dp else 16.dp
 
     val filtered = remember(library.notes, query, sort) {
         library.notes
@@ -275,6 +287,8 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                 library.notes.isEmpty() -> {
                     EmptyLibrary(
                         onCreate = { viewModel.createNote() },
+                        isLandscape = isLandscape,
+                        isTablet = isTablet,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -309,10 +323,15 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
 
                 else -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 156.dp),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                        columns = GridCells.Adaptive(minSize = gridMinWidth),
+                        contentPadding = PaddingValues(
+                            start = screenPadding,
+                            end = screenPadding,
+                            top = 8.dp,
+                            bottom = 104.dp,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(if (isTablet) 20.dp else 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (isTablet) 22.dp else 18.dp),
                     ) {
                         items(filtered, key = { it.id }) { note ->
                             NoteCard(
@@ -371,104 +390,161 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
 @Composable
 private fun EmptyLibrary(
     onCreate: () -> Unit,
+    isLandscape: Boolean,
+    isTablet: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val tone = remember { notebookToneFor("welcome") }
+    val coverWidth = when {
+        isTablet -> 152.dp
+        isLandscape -> 100.dp
+        else -> 118.dp
+    }
+    val coverHeight = when {
+        isTablet -> 196.dp
+        isLandscape -> 130.dp
+        else -> 152.dp
+    }
 
-    Column(
-        modifier = modifier.padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(width = 118.dp, height = 152.dp)
-                .shadow(10.dp, RoundedCornerShape(10.dp))
-                .clip(RoundedCornerShape(10.dp))
-                .background(Brush.linearGradient(listOf(tone.cover, tone.coverDeep))),
+    if (isLandscape) {
+        Row(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 48.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
         ) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(24.dp),
+            EmptyNotebookCover(tone = tone, width = coverWidth, height = coverHeight)
+            Spacer(Modifier.width(32.dp))
+            Column(
+                modifier = Modifier.widthIn(max = 440.dp),
+                horizontalAlignment = Alignment.Start,
             ) {
-                drawRect(
-                    brush = Brush.horizontalGradient(
-                        listOf(Color.Black.copy(alpha = 0.20f), Color.Transparent),
-                    ),
+                Text(
+                    text = "A fresh notebook awaits",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = 16.dp, top = 14.dp, end = 12.dp, bottom = 14.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(PaperIvory),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Outlined.Description,
-                    contentDescription = null,
-                    modifier = Modifier.size(36.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Capture lectures, sketches and ideas with tactile paper, ink and focused tools.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            Canvas(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = 28.dp)
-                    .size(width = 13.dp, height = 38.dp),
-            ) {
-                val notch = 5.dp.toPx()
-                val ribbon = Path().apply {
-                    moveTo(0f, 0f)
-                    lineTo(size.width, 0f)
-                    lineTo(size.width, size.height)
-                    lineTo(size.width / 2f, size.height - notch)
-                    lineTo(0f, size.height)
-                    close()
-                }
-                drawPath(ribbon, tone.ribbon.copy(alpha = 0.95f))
+                Spacer(Modifier.height(16.dp))
+                CreateNotebookButton(onCreate = onCreate)
             }
         }
-        Spacer(Modifier.height(26.dp))
-        Text(
-            text = "A fresh notebook awaits",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Capture lectures, sketches and ideas with tactile paper, ink and focused tools.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 12.dp),
-        )
-        Spacer(Modifier.height(24.dp))
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.clickable(onClick = onCreate),
+    } else {
+        Column(
+            modifier = modifier.padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Outlined.Add,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(19.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Create notebook",
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.labelLarge,
-                )
+            EmptyNotebookCover(tone = tone, width = coverWidth, height = coverHeight)
+            Spacer(Modifier.height(if (isTablet) 32.dp else 26.dp))
+            Text(
+                text = "A fresh notebook awaits",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Capture lectures, sketches and ideas with tactile paper, ink and focused tools.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            Spacer(Modifier.height(24.dp))
+            CreateNotebookButton(onCreate = onCreate)
+        }
+    }
+}
+
+@Composable
+private fun EmptyNotebookCover(
+    tone: com.notecraft.ui.theme.NotebookCoverTone,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp,
+) {
+    Box(
+        modifier = Modifier
+            .size(width = width, height = height)
+            .shadow(10.dp, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .background(Brush.linearGradient(listOf(tone.cover, tone.coverDeep))),
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(24.dp),
+        ) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    listOf(Color.Black.copy(alpha = 0.20f), Color.Transparent),
+                ),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 16.dp, top = 14.dp, end = 12.dp, bottom = 14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(PaperIvory),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Outlined.Description,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = width * 0.23f)
+                .size(width = 13.dp, height = 38.dp),
+        ) {
+            val notch = 5.dp.toPx()
+            val ribbon = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(size.width, 0f)
+                lineTo(size.width, size.height)
+                lineTo(size.width / 2f, size.height - notch)
+                lineTo(0f, size.height)
+                close()
             }
+            drawPath(ribbon, tone.ribbon.copy(alpha = 0.95f))
+        }
+    }
+}
+
+@Composable
+private fun CreateNotebookButton(onCreate: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.clickable(onClick = onCreate),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(19.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "Create notebook",
+                color = MaterialTheme.colorScheme.onPrimary,
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 }

@@ -34,7 +34,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Tactile paper sheet with a soft drop shadow on a neutral desk backdrop
 - Ruled 8 mm, squared graph, dotted 5 mm, Cornell and blank paper
 - Pinch to zoom up to 8× with two-finger pan
-- Floating zoom controls with a fit-page button
+- Floating zoom controls with fit-page, page-thumbnail, and page-background buttons
 - Undo and redo for every canvas, text, selection, and page operation
 
 ### Notes and pages
@@ -42,8 +42,8 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Create, rename, duplicate, and delete notes
 - Add, duplicate, delete, and reorder pages
 - Page backgrounds: blank, ruled, squared graph, dotted and Cornell
-- Floating page navigator with page dots and previous/next controls
-- Page thumbnail drawer with quick add-page tile
+- Compact page navigator with previous/next controls
+- Page thumbnail drawer accessible from the zoom controls, with a quick add-page tile
 - Live notebook-cover previews in the library
 - Notebook covers with spine crease, ribbon bookmark and label badge
 - Search notes by title
@@ -62,8 +62,11 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 
 - Design system defined in [DESIGN.md](DESIGN.md)
 - Ink Blue primary, tactile paper surfaces and notebook cover tones
+- Responsive phone and tablet layouts in portrait and landscape
+- Compact icon-only ribbon and horizontal zoom dock in short landscape
+- Adaptive notebook grid, page drawer columns, and scrollable dialogs
 - Material 3 light and dark themes
-- Edge-to-edge layout, adaptive launcher icon, press-scale tool feedback
+- Edge-to-edge layout and press-scale tool feedback
 
 ## Requirements
 
@@ -134,8 +137,8 @@ Update that path if the SDK is installed elsewhere.
 | Zoom | Pinch with two fingers, or use the canvas zoom buttons |
 | Add text | Text tool → tap an empty spot on the page |
 | Edit text | Text tool → tap existing text |
-| Change page | Use the arrows or page dots below the top bar |
-| Add a page | Open the page-thumbnail drawer and tap **Add page** |
+| Change page | Use the previous/next arrows, or open the page-thumbnail drawer from the zoom controls |
+| Add a page | Open the page-thumbnail drawer from the zoom controls and tap **Add page** |
 
 ## Project structure
 
@@ -168,8 +171,6 @@ app/src/main/
 │           ├── EditorToolbar.kt      # Tool picker, colors, widths, color picker
 │           └── EditorDialogs.kt      # Page background picker
 └── res/
-    ├── drawable/                     # Launcher icon artwork
-    ├── mipmap-anydpi-v26/            # Adaptive launcher icons
     └── values/                       # Strings, colors, themes
 ```
 
