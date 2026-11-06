@@ -66,7 +66,27 @@ enum class PageBackground(val label: String) {
     GRID("Squared graph"),
     DOTTED("Dotted · 5 mm"),
     CORNELL("Cornell notes"),
+    PLANNER("Daily planner"),
+    WEEKLY("Weekly planner"),
+    MUSIC("Music staff"),
+    STORYBOARD("Storyboard"),
+    CHECKLIST("Checklist"),
 }
+
+/** Theme preference exposed by the dedicated settings screen. */
+enum class ThemeMode(val label: String) {
+    SYSTEM("System"),
+    LIGHT("Light"),
+    DARK("Dark"),
+}
+
+/** App-wide preferences persisted separately from per-tool settings. */
+data class AppSettings(
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val defaultTool: ToolType = ToolType.BALL_PEN,
+    val defaultPageBackground: PageBackground? = null,
+    val showAutosaveIndicator: Boolean = true,
+)
 
 /** A point in page coordinates, with the touch pressure recorded at input time. */
 data class Pt(
@@ -113,6 +133,7 @@ data class Note(
     val createdAt: Long,
     val updatedAt: Long,
     val pages: List<Page>,
+    val coverTone: String? = null,
 ) {
     val pageCount: Int get() = pages.size
 }
@@ -122,14 +143,17 @@ fun newId(): String = UUID.randomUUID().toString()
 fun blankPage(background: PageBackground = PageBackground.BLANK): Page =
     Page(id = newId(), background = background)
 
-fun newNote(title: String = "Untitled notebook"): Note {
+fun newNote(
+    title: String = "Untitled notebook",
+    background: PageBackground = PageBackground.BLANK,
+): Note {
     val now = System.currentTimeMillis()
     return Note(
         id = newId(),
         title = title,
         createdAt = now,
         updatedAt = now,
-        pages = listOf(blankPage()),
+        pages = listOf(blankPage(background)),
     )
 }
 

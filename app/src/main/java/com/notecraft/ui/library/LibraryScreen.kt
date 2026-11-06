@@ -1,6 +1,9 @@
 package com.notecraft.ui.library
 
 import android.content.res.Configuration
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +43,8 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -62,6 +67,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,6 +81,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -84,14 +91,17 @@ import androidx.compose.ui.unit.dp
 import com.notecraft.model.Note
 import com.notecraft.ui.NoteCraftViewModel
 import com.notecraft.ui.components.ConfirmDialog
+import com.notecraft.ui.components.CoverToneDialog
 import com.notecraft.ui.components.NoteThumbnail
-import com.notecraft.ui.components.SettingsDialog
 import com.notecraft.ui.components.TextEntryDialog
 import com.notecraft.ui.theme.InkBlackColor
 import com.notecraft.ui.theme.InkSlate
+import com.notecraft.ui.theme.NotebookCoverTones
 import com.notecraft.ui.theme.PaperIvory
 import com.notecraft.ui.theme.notebookToneFor
+import com.notecraft.util.PdfExporter
 import com.notecraft.util.formatNoteDate
+import kotlinx.coroutines.launch
 
 private enum class NoteSort(val label: String) {
     UPDATED("Recently updated"),
@@ -110,7 +120,25 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
     var menuNoteId by remember { mutableStateOf<String?>(null) }
     var renameNote by remember { mutableStateOf<Note?>(null) }
     var deleteNote by remember { mutableStateOf<Note?>(null) }
-    var showSettings by remember { mutableStateOf(false) }
+    var coverNote by remember { mutableStateOf<Note?>(null) }
+    var exportNote by remember { mutableStateOf<Note?>(null) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf"),
+    ) { uri ->
+        val note = exportNote
+        if (uri != null && note != null) {
+            Toast.makeText(context, "Exporting PDF…", Toast.LENGTH_SHORT).show()
+            scope.launch {
+                runCatching { PdfExporter.export(context, uri, note) }
+                    .onSuccess { Toast.makeText(context, "PDF exported", Toast.LENGTH_SHORT).show() }
+                    .onFailure { Toast.makeText(context, "Could not export PDF", Toast.LENGTH_SHORT).show() }
+            }
+        }
+        exportNote = null
+    }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -182,7 +210,7 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showSettings = true }) {
+                    IconButton(onClick = viewModel::openSettings) {
                         Icon(Icons.Outlined.Settings, contentDescription = "Settings")
                     }
                     IconButton(
@@ -360,6 +388,15 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                                     menuNoteId = null
                                     viewModel.duplicateNote(note.id)
                                 },
+                                onCover = {
+                                    menuNoteId = null
+                                    coverNote = note
+                                },
+                                onExport = {
+                                    menuNoteId = null
+                                    exportNote = note
+                                    exportLauncher.launch(PdfExporter.fileName(note.title))
+                                },
                                 onDelete = {
                                     menuNoteId = null
                                     deleteNote = note
@@ -394,8 +431,16 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
         )
     }
 
-    if (showSettings) {
-        SettingsDialog(onDismiss = { showSettings = false })
+    coverNote?.let { note ->
+        CoverToneDialog(
+            noteId = note.id,
+            currentTone = note.coverTone,
+            onDismiss = { coverNote = null },
+            onSelect = { tone ->
+                viewModel.setNoteCover(note.id, tone)
+                coverNote = null
+            },
+        )
     }
 }
 
@@ -570,9 +615,15 @@ private fun NoteCard(
     onMenuDismiss: () -> Unit,
     onRename: () -> Unit,
     onDuplicate: () -> Unit,
+    onCover: () -> Unit,
+    onExport: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val tone = remember(note.id) { notebookToneFor(note.id) }
+    val tone = remember(note.id, note.coverTone) {
+        note.coverTone
+            ?.let { name -> NotebookCoverTones.firstOrNull { it.name == name } }
+            ?: notebookToneFor(note.id)
+    }
     val previewPage = remember(note.pages) {
         note.pages.firstOrNull { !it.isEmpty } ?: note.pages.firstOrNull()
     }
@@ -679,9 +730,19 @@ private fun NoteCard(
                         onClick = onRename,
                     )
                     DropdownMenuItem(
+                        text = { Text("Cover color") },
+                        leadingIcon = { Icon(Icons.Outlined.Palette, contentDescription = null) },
+                        onClick = onCover,
+                    )
+                    DropdownMenuItem(
                         text = { Text("Duplicate") },
                         leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
                         onClick = onDuplicate,
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Export PDF") },
+                        leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
+                        onClick = onExport,
                     )
                     DropdownMenuItem(
                         text = { Text("Delete", color = MaterialTheme.colorScheme.error) },

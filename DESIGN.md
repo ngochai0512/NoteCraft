@@ -98,7 +98,8 @@
 
 ### 2. Digital Notebook Card (Documents Home)
 * Realistic ratio (`3:4`) notebook preview with spine binding, leather/matte finish, ribbon bookmark, label badge, and edited timestamp.
-* Quick-action context menu (`...`) for export, duplicate, trash.
+* Quick-action context menu (`...`) for cover tone, PDF export, duplicate and trash.
+* Cover-tone chooser with automatic, navy leather, terracotta, forest sage, pastel lavender and charcoal options.
 
 ### 3. Canvas Paper
 * Authentic simulated paper texture with customizable guidelines:
@@ -106,15 +107,29 @@
   * Dotted Grid (5mm spacing)
   * Squared Graph
   * Cornell Notes
+  * Daily planner
+  * Weekly planner
+  * Music staff
+  * Storyboard
+  * Checklist
   * Blank Paper
 * The paper fills the entire editor viewport edge-to-edge; there is no desk backdrop, page border, or drop shadow.
 * Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
 * Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
 * Paper is allowed to extend behind display cutouts and system bars, while toolbars, navigation, zoom controls, and sheets inset themselves using `WindowInsets.safeDrawing` / `WindowInsets.displayCutout`.
+* The eraser removes only the touched portion of a stroke; shapes and text are removed whole, and each erase gesture is one undo step.
 
-### 4. Page Thumbnail & Bookmarks Drawer
+### 4. Page Thumbnail & Bookmarks
 * 2-column or 3-column micro-page grid.
 * Quick add page before/after, bookmark star toggle, and drag-and-drop reordering indicator.
+
+### 5. Settings Screen
+* A dedicated full screen opened from the library or editor, never a dialog.
+* Rows use the same icon tile, title, description and trailing-control rhythm as the rest of the app.
+* Appearance: system, light or dark theme.
+* Editor: default tool, default paper for new pages, autosave indicator toggle.
+* Palm rejection, cloud backup, handwriting search and audio notes are marked **Coming soon** with an inline badge.
+* Storage and offline status are described in a read-only section.
 
 ---
 
@@ -123,3 +138,4 @@
 * **Palette Expansion**: Smooth accordion drop with slight spring curve (`cubic-bezier(0.16, 1, 0.3, 1)`).
 * **Page Turn / Swipe**: Fluid horizontal swipe transition simulating page leafing.
 * **Undo / Redo Haptic Feedback**: Visual pulse indicator on toolbar state change.
+* **PDF Export**: Uses the system document picker, writes A4 pages at 150 dpi, and keeps the existing paper, template and ink rendering.

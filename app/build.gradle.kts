@@ -69,4 +69,6 @@ dependencies {
     implementation("androidx.ink:ink-strokes:1.0.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.9.2")
+
+    testImplementation("junit:junit:4.13.2")
 }

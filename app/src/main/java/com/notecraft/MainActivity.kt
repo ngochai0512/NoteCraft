@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.notecraft.model.ThemeMode
 import com.notecraft.ui.NoteCraftApp
 import com.notecraft.ui.NoteCraftViewModel
 import com.notecraft.ui.theme.NoteCraftTheme
@@ -20,7 +22,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         configureDisplayCutout()
         setContent {
-            NoteCraftTheme {
+            val darkTheme = when (viewModel.settings.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            NoteCraftTheme(darkTheme = darkTheme) {
                 NoteCraftApp(viewModel)
             }
         }

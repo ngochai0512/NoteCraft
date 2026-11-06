@@ -1,6 +1,9 @@
 package com.notecraft.ui.editor
 
 import android.content.res.Configuration
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,6 +47,9 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,6 +68,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,9 +77,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.notecraft.model.Note
 import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
@@ -81,9 +90,12 @@ import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.ui.NoteCraftViewModel
 import com.notecraft.ui.components.ConfirmDialog
+import com.notecraft.ui.components.CoverToneDialog
 import com.notecraft.ui.components.NoteThumbnail
 import com.notecraft.ui.components.TextEntryDialog
 import com.notecraft.ui.theme.MintGreen
+import com.notecraft.util.PdfExporter
+import kotlinx.coroutines.launch
 
 private sealed interface TextDialogTarget {
     data class New(val point: Offset) : TextDialogTarget
@@ -100,12 +112,30 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
     var showBackgroundDialog by remember { mutableStateOf(false) }
     var showColorPicker by remember { mutableStateOf(false) }
     var showDeleteNoteDialog by remember { mutableStateOf(false) }
+    var showCoverDialog by remember { mutableStateOf(false) }
     var textDialogTarget by remember { mutableStateOf<TextDialogTarget?>(null) }
     var showPageDrawer by remember { mutableStateOf(false) }
     var expandedTool by remember { mutableStateOf<ToolType?>(null) }
     var showToolMenu by remember { mutableStateOf(false) }
+    var exportNote by remember { mutableStateOf<Note?>(null) }
     val pageSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf"),
+    ) { uri ->
+        val note = exportNote
+        if (uri != null && note != null) {
+            Toast.makeText(context, "Exporting PDF…", Toast.LENGTH_SHORT).show()
+            scope.launch {
+                runCatching { PdfExporter.export(context, uri, note) }
+                    .onSuccess { Toast.makeText(context, "PDF exported", Toast.LENGTH_SHORT).show() }
+                    .onFailure { Toast.makeText(context, "Could not export PDF", Toast.LENGTH_SHORT).show() }
+            }
+        }
+        exportNote = null
+    }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -129,6 +159,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
         showBackgroundDialog ||
         showColorPicker ||
         showDeleteNoteDialog ||
+        showCoverDialog ||
         textDialogTarget != null ||
         showPageDrawer ||
         showMenu ||
@@ -175,15 +206,22 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(5.dp)
-                                        .clip(CircleShape)
-                                        .background(MintGreen),
-                                )
+                                if (viewModel.settings.showAutosaveIndicator) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(MintGreen),
+                                    )
+                                }
                                 Text(
-                                    text = "SAVED · ${editor.note.pageCount} " +
-                                        if (editor.note.pageCount == 1) "PAGE" else "PAGES",
+                                    text = if (viewModel.settings.showAutosaveIndicator) {
+                                        "SAVED · ${editor.note.pageCount} " +
+                                            if (editor.note.pageCount == 1) "PAGE" else "PAGES"
+                                    } else {
+                                        "${editor.note.pageCount} " +
+                                            if (editor.note.pageCount == 1) "PAGE" else "PAGES"
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -226,6 +264,14 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 onClick = {
                                     showMenu = false
                                     showRenameDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Cover color") },
+                                leadingIcon = { Icon(Icons.Outlined.Palette, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    showCoverDialog = true
                                 },
                             )
                             DropdownMenuItem(
@@ -285,6 +331,24 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 onClick = {
                                     showMenu = false
                                     viewModel.deletePage()
+                                },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Export PDF") },
+                                leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    exportNote = editor.note
+                                    exportLauncher.launch(PdfExporter.fileName(editor.note.title))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Settings") },
+                                leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.openSettings()
                                 },
                             )
                             HorizontalDivider()
@@ -469,6 +533,18 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
             onConfirm = { color ->
                 viewModel.setToolColor(color)
                 showColorPicker = false
+            },
+        )
+    }
+
+    if (showCoverDialog) {
+        CoverToneDialog(
+            noteId = editor.note.id,
+            currentTone = editor.note.coverTone,
+            onDismiss = { showCoverDialog = false },
+            onSelect = { tone ->
+                viewModel.setNoteCover(editor.note.id, tone)
+                showCoverDialog = false
             },
         )
     }

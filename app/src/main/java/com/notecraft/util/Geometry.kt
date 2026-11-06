@@ -6,6 +6,7 @@ import com.notecraft.model.ShapeType
 import com.notecraft.model.Stroke
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
+import com.notecraft.model.newId
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -111,6 +112,54 @@ fun Stroke.hitTest(x: Float, y: Float, extraRadius: Float): Boolean {
         }
     }
     return false
+}
+
+/**
+ * Removes the portion of this stroke inside the eraser circle and returns the remaining pieces.
+ * Shapes and single-point strokes disappear as a whole. The first remaining piece keeps the
+ * original id so selection and history stay stable.
+ */
+fun Stroke.partialErase(x: Float, y: Float, extraRadius: Float): List<Stroke> {
+    if (tool == ToolType.SHAPE) {
+        return if (hitTest(x, y, extraRadius)) emptyList() else listOf(this)
+    }
+    val threshold = width / 2f + extraRadius
+    if (points.size == 1) {
+        val point = points.first()
+        return if (hypot(x - point.x, y - point.y) <= threshold) emptyList() else listOf(this)
+    }
+
+    val erasedSegments = BooleanArray(points.size - 1)
+    var anyErased = false
+    for (index in 0 until points.size - 1) {
+        val start = points[index]
+        val end = points[index + 1]
+        val hit = distancePointToSegment(x, y, start.x, start.y, end.x, end.y) <= threshold
+        erasedSegments[index] = hit
+        if (hit) anyErased = true
+    }
+    if (!anyErased) return listOf(this)
+
+    val runs = mutableListOf<MutableList<Pt>>()
+    var run = mutableListOf(points.first())
+    for (index in erasedSegments.indices) {
+        val next = points[index + 1]
+        if (erasedSegments[index]) {
+            if (run.size >= 2) runs.add(run)
+            run = mutableListOf(next)
+        } else {
+            run.add(next)
+        }
+    }
+    if (run.size >= 2) runs.add(run)
+    if (runs.isEmpty()) return emptyList()
+
+    return runs.mapIndexed { index, runPoints ->
+        copy(
+            id = if (index == 0) id else newId(),
+            points = runPoints.toList(),
+        )
+    }
 }
 
 private fun Stroke.shapeHitTest(x: Float, y: Float, threshold: Float): Boolean {

@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.notecraft.data.NoteRepository
+import com.notecraft.model.AppSettings
 import com.notecraft.model.DefaultToolColors
 import com.notecraft.model.DefaultToolWidths
 import com.notecraft.model.Note
@@ -16,12 +17,14 @@ import com.notecraft.model.PageBackground
 import com.notecraft.model.ShapeType
 import com.notecraft.model.Stroke
 import com.notecraft.model.TextItem
+import com.notecraft.model.ThemeMode
 import com.notecraft.model.ToolType
 import com.notecraft.model.blankPage
 import com.notecraft.model.duplicate
 import com.notecraft.model.newId
 import com.notecraft.model.newNote
 import com.notecraft.util.hitTest
+import com.notecraft.util.partialErase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,15 +57,19 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val repository = NoteRepository(application)
     private val preferences = application.getSharedPreferences("notecraft_tool_prefs", Context.MODE_PRIVATE)
+    private val settingsPreferences = application.getSharedPreferences("notecraft_settings", Context.MODE_PRIVATE)
     private var savedToolColors: Map<ToolType, Long> = DefaultToolColors.mapValues { (tool, default) ->
         preferences.getLong("color_${tool.name}", default)
     }
     private var savedToolWidths: Map<ToolType, Float> = DefaultToolWidths.mapValues { (tool, default) ->
         preferences.getFloat("width_${tool.name}", default)
     }
-    private var savedTool: ToolType = runCatching {
-        ToolType.valueOf(preferences.getString("tool", ToolType.BALL_PEN.name) ?: ToolType.BALL_PEN.name)
-    }.getOrDefault(ToolType.BALL_PEN)
+
+    var settings by mutableStateOf(loadSettings())
+        private set
+
+    var settingsOpen by mutableStateOf(false)
+        private set
 
     var library by mutableStateOf(LibraryState())
         private set
@@ -87,7 +94,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     // ---------------------------------------------------------------- library
 
     fun createNote() {
-        val note = newNote()
+        val note = newNote(background = settings.defaultPageBackground ?: PageBackground.BLANK)
         library = library.copy(notes = (listOf(note) + library.notes).sortedByDescending { it.updatedAt })
         viewModelScope.launch { repository.save(note) }
         openNote(note.id)
@@ -102,7 +109,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         selectionMoveBaseline = null
         editor = EditorState(
             note = note,
-            tool = savedTool,
+            tool = settings.defaultTool,
             toolColors = savedToolColors,
             toolWidths = savedToolWidths,
             canUndo = false,
@@ -171,12 +178,83 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch { repository.save(note) }
     }
 
+    // ---------------------------------------------------------------- settings
+
+    fun openSettings() {
+        flush()
+        settingsOpen = true
+    }
+
+    fun closeSettings() {
+        settingsOpen = false
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        settings = settings.copy(themeMode = mode)
+        settingsPreferences.edit().putString("theme_mode", mode.name).apply()
+    }
+
+    fun setDefaultTool(tool: ToolType) {
+        settings = settings.copy(defaultTool = tool)
+        settingsPreferences.edit().putString("default_tool", tool.name).apply()
+    }
+
+    fun setDefaultPageBackground(background: PageBackground?) {
+        settings = settings.copy(defaultPageBackground = background)
+        settingsPreferences.edit().apply {
+            if (background == null) {
+                remove("default_page_background")
+            } else {
+                putString("default_page_background", background.name)
+            }
+        }.apply()
+    }
+
+    fun setShowAutosaveIndicator(show: Boolean) {
+        settings = settings.copy(showAutosaveIndicator = show)
+        settingsPreferences.edit().putBoolean("show_autosave_indicator", show).apply()
+    }
+
+    fun setNoteCover(noteId: String, coverTone: String?) {
+        val existing = library.notes.firstOrNull { it.id == noteId }
+            ?: editor?.note?.takeIf { it.id == noteId }
+            ?: return
+        val updated = existing.copy(coverTone = coverTone, updatedAt = System.currentTimeMillis())
+        syncLibrary(updated)
+        if (editor?.note?.id == noteId) {
+            editor = editor?.copy(note = updated)
+        }
+        scheduleSave(updated)
+    }
+
+    private fun loadSettings(): AppSettings {
+        val themeMode = runCatching {
+            ThemeMode.valueOf(
+                settingsPreferences.getString("theme_mode", ThemeMode.SYSTEM.name)
+                    ?: ThemeMode.SYSTEM.name,
+            )
+        }.getOrDefault(ThemeMode.SYSTEM)
+        val defaultTool = runCatching {
+            ToolType.valueOf(
+                settingsPreferences.getString("default_tool", ToolType.BALL_PEN.name)
+                    ?: ToolType.BALL_PEN.name,
+            )
+        }.getOrDefault(ToolType.BALL_PEN)
+        val defaultBackground = settingsPreferences
+            .getString("default_page_background", null)
+            ?.let { raw -> runCatching { PageBackground.valueOf(raw) }.getOrNull() }
+        return AppSettings(
+            themeMode = themeMode,
+            defaultTool = defaultTool,
+            defaultPageBackground = defaultBackground,
+            showAutosaveIndicator = settingsPreferences.getBoolean("show_autosave_indicator", true),
+        )
+    }
+
     // ---------------------------------------------------------------- editor state
 
     fun setTool(tool: ToolType) {
         val current = editor ?: return
-        savedTool = tool
-        preferences.edit().putString("tool", tool.name).apply()
         editor = current.copy(
             tool = tool,
             selectedStrokeIds = if (tool == ToolType.LASSO) current.selectedStrokeIds else emptySet(),
@@ -230,7 +308,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun addPage() {
         val current = editor ?: return
         val insertAt = (current.pageIndex + 1).coerceIn(0, current.note.pages.size)
-        val page = blankPage(current.page.background)
+        val page = blankPage(settings.defaultPageBackground ?: current.page.background)
         commitPages { pages -> pages.toMutableList().also { it.add(insertAt, page) } }
         editor = editor?.copy(pageIndex = insertAt, selectedStrokeIds = emptySet(), selectedTextIds = emptySet())
     }
@@ -305,11 +383,17 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
         val page = current.note.pages[index]
         val radius = (current.toolWidths[ToolType.ERASER] ?: 26f) / 2f
-        val strokesToRemove = page.strokes.filter { it.hitTest(x, y, radius) }.map { it.id }.toSet()
+        val remainingStrokes = page.strokes.flatMap { stroke ->
+            if (stroke.hitTest(x, y, radius)) {
+                stroke.partialErase(x, y, radius)
+            } else {
+                listOf(stroke)
+            }
+        }
         val textsToRemove = page.texts.filter { it.hitTest(x, y, radius) }.map { it.id }.toSet()
-        if (strokesToRemove.isEmpty() && textsToRemove.isEmpty()) return
+        if (remainingStrokes == page.strokes && textsToRemove.isEmpty()) return
         val updated = page.copy(
-            strokes = page.strokes.filterNot { it.id in strokesToRemove },
+            strokes = remainingStrokes,
             texts = page.texts.filterNot { it.id in textsToRemove },
         )
         replacePageWithoutHistory(index, updated)

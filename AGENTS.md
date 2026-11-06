@@ -34,6 +34,10 @@ Do not answer from memory or guess APIs. Read the files that own the behavior yo
 - `app/src/main/java/com/notecraft/ui/editor/EditorScreen.kt` — editor scaffold, dialogs, page drawer.
 - `app/src/main/java/com/notecraft/ui/editor/EditorToolbar.kt` — tool ribbon and tool options.
 - `app/src/main/java/com/notecraft/ui/library/LibraryScreen.kt` — note library.
+- `app/src/main/java/com/notecraft/ui/settings/SettingsScreen.kt` — dedicated preferences screen.
+- `app/src/main/java/com/notecraft/ui/components/CoverToneDialog.kt` — notebook cover chooser.
+- `app/src/main/java/com/notecraft/util/PdfExporter.kt` — PDF rendering and export.
+- `app/src/main/java/com/notecraft/util/Geometry.kt` — hit tests, partial eraser, lasso selection.
 - `app/src/main/AndroidManifest.xml`, `app/build.gradle.kts`, `settings.gradle.kts`.
 
 If code and documentation disagree, say so and resolve it deliberately rather than silently picking
@@ -77,9 +81,9 @@ adb logcat -d -t 200 | grep -E "FATAL EXCEPTION|AndroidRuntime"
 Available AVDs in this environment may include `Pixel_10_Pro_XL` and `Pixel_Tablet`. Enable
 auto-rotate to test portrait and landscape; the app declares `fullUser` orientation.
 
-There are currently **no unit-test or UI-test source sets**. If you add tests, put pure
-model/view-model logic tests under `app/src/test/java` and run `:app:testDebugUnitTest`. Do not claim
-runtime verification unless you ran the app on a device or emulator.
+Pure logic tests live under `app/src/test/java` (currently `GeometryTest.kt` for the partial
+eraser). Run them with `./gradlew :app:testDebugUnitTest --offline`. UI tests are not set up yet.
+Do not claim runtime verification unless you ran the app on a device or emulator.
 
 ## 4. Architecture and state
 
@@ -113,15 +117,16 @@ MainActivity
 - `PrimaryTools`, `SecondaryTools`, and `PersistentTools` drive the editor UI. The laser is
   transient and must not be persisted; eraser strokes are not stored.
 - Notes are JSON files at `filesDir/notes/<note-id>.json`, format `version = 1`. Pages contain
-  strokes and text items. The repository writes via a temporary file and atomic rename under
-  `Dispatchers.IO` with a `Mutex`.
+  strokes and text items; a note may also store an optional `coverTone` name. The repository writes
+  via a temporary file and atomic rename under `Dispatchers.IO` with a `Mutex`.
 - Saving is debounced (550 ms) and flushed when the editor closes or the app reaches `ON_STOP`.
   Any new user-visible mutation must end in `syncLibrary` + `scheduleSave`, or the existing
   `commitPages`/`applyPages` path.
 - Keep parsing tolerant and backward compatible: legacy `PEN` maps to `BALL_PEN`, unknown tools fall
   back to `BALL_PEN`, and malformed items are skipped instead of failing the whole note.
-- Tool preferences (per-tool color/width and last tool) live in `SharedPreferences`
-  `notecraft_tool_prefs`.
+- Tool preferences (per-tool color/width) live in `SharedPreferences` `notecraft_tool_prefs`.
+- App preferences (theme, default tool, default paper for new pages, autosave indicator) live in
+  `SharedPreferences` `notecraft_settings`. Palm rejection is intentionally a placeholder.
 - Do not add network access, cloud sync, accounts, or a database without explicit approval.
 
 ## 6. Editor rendering and Jetpack Ink
@@ -136,6 +141,9 @@ Key rules:
   accepts explicit canvas bounds. Do not reintroduce the desk gradient, page drop shadow, rounded
   sheet, page border, or page-shaped `clipRect`. Patterns stay anchored to the page origin so they
   pan and zoom with the page while covering the screen.
+- Paper templates are BLANK, LINED, GRID, DOTTED, CORNELL, PLANNER, WEEKLY, MUSIC, STORYBOARD and
+  CHECKLIST. The editor renders template structures inside the page bounds; the picker preview in
+  `EditorDialogs.kt` must stay exhaustive when a template is added.
 - Thumbnails intentionally use the page-bounded rendering path. Do not make the editor use that
   path or the paper will stop filling the screen.
 - **Jetpack Ink tools:** fountain pen, ball pen, brush pen, highlighter (`InkToolTypes`).
@@ -200,7 +208,13 @@ Key rules:
 - Laser is a fading transient trail and is never saved.
 - Lasso supports select, move, duplicate, and delete. Move by dragging inside the selection bounds.
 - Text tool: tap empty paper to add text; tap existing text to edit it; the eraser can remove text.
+- The eraser removes only the touched portion of a stroke, splitting the remainder into pieces
+  (shapes and text are removed whole). Keep the `beginErase`/`endErase` undo baseline intact.
 - Page background changes are undoable.
+- Notebook covers can be automatic (derived from the note id) or one of the named tones; persist
+  the choice through `Note.coverTone`.
+- PDF export uses the system document picker and rasterizes pages at 150 dpi. Do not change the
+  rendering path without checking paper, templates, text, and exported page orientation.
 - Do not change tool ordering, default widths/colors, or gesture semantics without a clear design
   reason.
 
@@ -228,8 +242,11 @@ Before reporting a task complete:
    - drawing: fountain, ball, brush, pencil, marker, shapes, tape, laser, text, lasso
    - Ink wet stroke → dry NoteCraft stroke handoff
    - zoom in/out, pan, and drawing alignment at 100% and zoomed
-   - eraser, selection move/duplicate/delete, undo/redo
-   - page add/duplicate/delete/reorder and background change
+   - partial eraser across a stroke, selection move/duplicate/delete, undo/redo
+   - page add/duplicate/delete/reorder and every background template
+   - cover-tone chooser and persistence after relaunch
+   - settings: theme override, default tool, default paper, autosave indicator
+   - PDF export of a single-page and multi-page notebook, then open the PDF
    - close/reopen the editor and relaunch the app to verify autosave
    - phone portrait and landscape; tablet if available
    - display cutout simulation: `adb shell cmd overlay enable
@@ -242,7 +259,7 @@ Before reporting a task complete:
 These are intentional or currently unimplemented. Do not "fix" them opportunistically without
 asking:
 
-- Eraser removes whole strokes; it is not a pixel eraser.
+- The eraser removes stroke portions, not individual pixels; shapes and text are removed whole.
 - Text does not auto-wrap; use line breaks.
 - Undo history is session-only.
 - Notes are local only: no sync, export, cloud backup, or sharing.

@@ -27,7 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -229,6 +231,93 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBackgroundPrevi
                 end = Offset(cue, bottom),
                 strokeWidth = 1f,
             )
+        }
+
+        PageBackground.PLANNER -> {
+            val header = height * 0.12f
+            drawRect(rule, Offset(0f, 0f), Size(width, header), style = DrawStroke(1f))
+            drawRect(rule, Offset(width * 0.05f, header + height * 0.04f), Size(width * 0.28f, height * 0.5f), style = DrawStroke(1f))
+            drawRect(rule, Offset(width * 0.37f, header + height * 0.04f), Size(width * 0.58f, height * 0.5f), style = DrawStroke(1f))
+            drawRect(margin.copy(alpha = 0.5f), Offset(width * 0.05f, height * 0.69f), Size(width * 0.9f, height * 0.24f), style = DrawStroke(1f))
+            var y = header + height * 0.1f
+            while (y < height * 0.56f) {
+                drawLine(rule.copy(alpha = 0.55f), Offset(width * 0.05f, y), Offset(width * 0.33f, y), 0.7f)
+                drawLine(rule.copy(alpha = 0.55f), Offset(width * 0.37f, y), Offset(width * 0.95f, y), 0.7f)
+                y += height * 0.055f
+            }
+            var task = height * 0.72f
+            while (task < height * 0.9f) {
+                drawRect(rule, Offset(width * 0.08f, task), Size(width * 0.035f, width * 0.035f), style = DrawStroke(0.8f))
+                drawLine(rule.copy(alpha = 0.5f), Offset(width * 0.13f, task + width * 0.018f), Offset(width * 0.92f, task + width * 0.018f), 0.7f)
+                task += height * 0.04f
+            }
+        }
+
+        PageBackground.WEEKLY -> {
+            val top = height * 0.08f
+            val headerBottom = top + height * 0.05f
+            drawRect(rule, Offset(0f, top), Size(width, headerBottom - top), style = DrawStroke(1f))
+            for (i in 0..7) {
+                val x = width * i / 7f
+                drawLine(rule.copy(alpha = 0.8f), Offset(x, top), Offset(x, height * 0.94f), 0.8f)
+            }
+            var y = headerBottom + height * 0.08f
+            while (y < height * 0.94f) {
+                drawLine(rule.copy(alpha = 0.5f), Offset(0f, y), Offset(width, y), 0.7f)
+                y += height * 0.09f
+            }
+        }
+
+        PageBackground.MUSIC -> {
+            val gap = height * 0.011f
+            var top = height * 0.08f
+            while (top + gap * 4 < height * 0.94f) {
+                for (line in 0..4) {
+                    val y = top + gap * line
+                    drawLine(rule.copy(alpha = 0.8f), Offset(width * 0.08f, y), Offset(width * 0.92f, y), 0.8f)
+                }
+                top += gap * 4 + height * 0.12f
+            }
+        }
+
+        PageBackground.STORYBOARD -> {
+            val left = width * 0.06f
+            val top = height * 0.1f
+            val gap = width * 0.04f
+            val cellWidth = (width - left * 2 - gap) / 2f
+            val cellHeight = (height * 0.82f - gap * 2) / 3f
+            for (row in 0..2) {
+                for (column in 0..1) {
+                    val x = left + column * (cellWidth + gap)
+                    val y = top + row * (cellHeight + gap)
+                    drawRect(rule, Offset(x, y), Size(cellWidth, cellHeight), style = DrawStroke(0.9f))
+                    drawLine(
+                        color = rule.copy(alpha = 0.5f),
+                        start = Offset(x + width * 0.02f, y + cellHeight - height * 0.025f),
+                        end = Offset(x + cellWidth - width * 0.02f, y + cellHeight - height * 0.025f),
+                        strokeWidth = 0.6f,
+                    )
+                }
+            }
+        }
+
+        PageBackground.CHECKLIST -> {
+            val gap = width * 0.06f
+            val columnWidth = (width - gap) / 2f
+            for (column in 0..1) {
+                val x = column * (columnWidth + gap)
+                var y = height * 0.1f
+                while (y < height * 0.9f) {
+                    drawRect(rule, Offset(x, y), Size(width * 0.045f, width * 0.045f), style = DrawStroke(0.8f))
+                    drawLine(
+                        color = rule.copy(alpha = 0.5f),
+                        start = Offset(x + width * 0.08f, y + width * 0.022f),
+                        end = Offset(x + columnWidth - width * 0.03f, y + width * 0.022f),
+                        strokeWidth = 0.7f,
+                    )
+                    y += height * 0.08f
+                }
+            }
         }
     }
 }

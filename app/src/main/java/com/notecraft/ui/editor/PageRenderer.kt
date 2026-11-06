@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
@@ -122,6 +123,10 @@ fun DrawScope.drawPageBackground(
     bottom: Float = origin.y + PAGE_HEIGHT * scale,
 ) {
     if (scale <= 0f || right <= left || bottom <= top) return
+    val pageLeft = origin.x
+    val pageTop = origin.y
+    val pageRight = origin.x + PAGE_WIDTH * scale
+    val pageBottom = origin.y + PAGE_HEIGHT * scale
     when (background) {
         PageBackground.BLANK -> Unit
 
@@ -231,7 +236,381 @@ fun DrawScope.drawPageBackground(
                 )
             }
         }
+
+        PageBackground.PLANNER -> {
+            clipRect(pageLeft, pageTop, pageRight, pageBottom) {
+                val margin = 48f * scale
+                val innerLeft = pageLeft + margin
+                val innerRight = pageRight - margin
+                val contentWidth = innerRight - innerLeft
+                val lineWidth = 1.1f * scale.coerceAtLeast(0.3f)
+                val thin = 0.9f * scale.coerceAtLeast(0.3f)
+                val headerTop = pageTop + 48f * scale
+                val headerBottom = pageTop + 150f * scale
+                val mainTop = pageTop + 190f * scale
+                val scheduleBottom = pageTop + 1010f * scale
+                val tasksTop = pageTop + 1050f * scale
+                val tasksBottom = pageBottom - 44f * scale
+                val scheduleRight = innerLeft + contentWidth * 0.32f
+                val notesLeft = scheduleRight + 24f * scale
+
+                drawTemplateLabel(
+                    text = "DAILY PLANNER",
+                    x = innerLeft,
+                    y = headerTop + 28f * scale,
+                    scale = scale,
+                    size = 20f,
+                )
+                drawTemplateLabel(
+                    text = "DATE",
+                    x = innerLeft + 10f * scale,
+                    y = headerTop + 62f * scale,
+                    scale = scale,
+                    size = 11f,
+                )
+                drawTemplateLabel(
+                    text = "FOCUS",
+                    x = innerLeft + contentWidth * 0.55f,
+                    y = headerTop + 62f * scale,
+                    scale = scale,
+                    size = 11f,
+                )
+                drawRoundRect(
+                    color = GridColor.copy(alpha = 0.65f),
+                    topLeft = Offset(innerLeft, headerTop),
+                    size = Size(contentWidth, headerBottom - headerTop),
+                    cornerRadius = CornerRadius(10f * scale, 10f * scale),
+                    style = DrawStroke(width = lineWidth),
+                )
+                drawLine(
+                    color = GridColor.copy(alpha = 0.65f),
+                    start = Offset(innerLeft + contentWidth * 0.52f, headerTop),
+                    end = Offset(innerLeft + contentWidth * 0.52f, headerBottom),
+                    strokeWidth = lineWidth,
+                )
+                drawLine(
+                    color = RuleColor.copy(alpha = 0.55f),
+                    start = Offset(innerLeft + 10f * scale, headerTop + 78f * scale),
+                    end = Offset(innerLeft + contentWidth * 0.48f, headerTop + 78f * scale),
+                    strokeWidth = thin,
+                )
+                drawLine(
+                    color = RuleColor.copy(alpha = 0.55f),
+                    start = Offset(innerLeft + contentWidth * 0.55f, headerTop + 78f * scale),
+                    end = Offset(innerRight - 10f * scale, headerTop + 78f * scale),
+                    strokeWidth = thin,
+                )
+
+                drawRoundRect(
+                    color = GridColor.copy(alpha = 0.65f),
+                    topLeft = Offset(innerLeft, mainTop),
+                    size = Size(scheduleRight - innerLeft, scheduleBottom - mainTop),
+                    cornerRadius = CornerRadius(10f * scale, 10f * scale),
+                    style = DrawStroke(width = lineWidth),
+                )
+                drawTemplateLabel(
+                    text = "SCHEDULE",
+                    x = innerLeft + 10f * scale,
+                    y = mainTop + 22f * scale,
+                    scale = scale,
+                    size = 11f,
+                )
+                val slotHeight = 54f * scale
+                var slotY = mainTop + 40f * scale
+                var hour = 8
+                while (slotY < scheduleBottom - 8f * scale) {
+                    drawLine(
+                        color = RuleColor.copy(alpha = 0.55f),
+                        start = Offset(innerLeft, slotY),
+                        end = Offset(scheduleRight, slotY),
+                        strokeWidth = thin,
+                    )
+                    if (hour <= 20) {
+                        drawTemplateLabel(
+                            text = "$hour:00",
+                            x = innerLeft + 8f * scale,
+                            y = slotY + 16f * scale,
+                            scale = scale,
+                            size = 10f,
+                            color = DotColor.copy(alpha = 0.9f),
+                        )
+                    }
+                    slotY += slotHeight
+                    hour++
+                }
+
+                drawRoundRect(
+                    color = GridColor.copy(alpha = 0.65f),
+                    topLeft = Offset(notesLeft, mainTop),
+                    size = Size(innerRight - notesLeft, scheduleBottom - mainTop),
+                    cornerRadius = CornerRadius(10f * scale, 10f * scale),
+                    style = DrawStroke(width = lineWidth),
+                )
+                drawTemplateLabel(
+                    text = "NOTES",
+                    x = notesLeft + 10f * scale,
+                    y = mainTop + 22f * scale,
+                    scale = scale,
+                    size = 11f,
+                )
+                var noteY = mainTop + 46f * scale
+                while (noteY < scheduleBottom - 10f * scale) {
+                    drawLine(
+                        color = RuleColor.copy(alpha = 0.50f),
+                        start = Offset(notesLeft + 10f * scale, noteY),
+                        end = Offset(innerRight - 10f * scale, noteY),
+                        strokeWidth = thin,
+                    )
+                    noteY += 38f * scale
+                }
+
+                drawRoundRect(
+                    color = GridColor.copy(alpha = 0.65f),
+                    topLeft = Offset(innerLeft, tasksTop),
+                    size = Size(contentWidth, tasksBottom - tasksTop),
+                    cornerRadius = CornerRadius(10f * scale, 10f * scale),
+                    style = DrawStroke(width = lineWidth),
+                )
+                drawTemplateLabel(
+                    text = "TASKS",
+                    x = innerLeft + 10f * scale,
+                    y = tasksTop + 22f * scale,
+                    scale = scale,
+                    size = 11f,
+                )
+                var taskY = tasksTop + 44f * scale
+                while (taskY < tasksBottom - 8f * scale) {
+                    val box = 16f * scale
+                    drawRoundRect(
+                        color = GridColor.copy(alpha = 0.85f),
+                        topLeft = Offset(innerLeft + 12f * scale, taskY - box + 2f * scale),
+                        size = Size(box, box),
+                        cornerRadius = CornerRadius(3f * scale, 3f * scale),
+                        style = DrawStroke(width = thin),
+                    )
+                    drawLine(
+                        color = RuleColor.copy(alpha = 0.50f),
+                        start = Offset(innerLeft + 38f * scale, taskY),
+                        end = Offset(innerRight - 12f * scale, taskY),
+                        strokeWidth = thin,
+                    )
+                    taskY += 34f * scale
+                }
+            }
+        }
+
+        PageBackground.WEEKLY -> {
+            clipRect(pageLeft, pageTop, pageRight, pageBottom) {
+                val margin = 40f * scale
+                val innerLeft = pageLeft + margin
+                val innerRight = pageRight - margin
+                val tableTop = pageTop + 90f * scale
+                val headerBottom = tableTop + 50f * scale
+                val tableBottom = pageBottom - 44f * scale
+                val lineWidth = 1.1f * scale.coerceAtLeast(0.3f)
+                val thin = 0.9f * scale.coerceAtLeast(0.3f)
+                val days = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+                val columnWidth = (innerRight - innerLeft) / days.size
+
+                drawTemplateLabel(
+                    text = "WEEKLY PLAN",
+                    x = innerLeft,
+                    y = pageTop + 58f * scale,
+                    scale = scale,
+                    size = 20f,
+                )
+                drawRect(
+                    color = GridColor.copy(alpha = 0.70f),
+                    topLeft = Offset(innerLeft, tableTop),
+                    size = Size(innerRight - innerLeft, headerBottom - tableTop),
+                    style = DrawStroke(width = lineWidth),
+                )
+                days.forEachIndexed { index, day ->
+                    val x = innerLeft + columnWidth * index
+                    if (index > 0) {
+                        drawLine(
+                            color = GridColor.copy(alpha = 0.70f),
+                            start = Offset(x, tableTop),
+                            end = Offset(x, tableBottom),
+                            strokeWidth = lineWidth,
+                        )
+                    }
+                    drawTemplateLabel(
+                        text = day,
+                        x = x + columnWidth / 2f - 10f * scale,
+                        y = headerBottom - 16f * scale,
+                        scale = scale,
+                        size = 11f,
+                    )
+                    var y = headerBottom + 40f * scale
+                    while (y < tableBottom - 6f * scale) {
+                        drawLine(
+                            color = RuleColor.copy(alpha = 0.48f),
+                            start = Offset(x + 8f * scale, y),
+                            end = Offset(x + columnWidth - 8f * scale, y),
+                            strokeWidth = thin,
+                        )
+                        y += 38f * scale
+                    }
+                }
+                drawRect(
+                    color = GridColor.copy(alpha = 0.70f),
+                    topLeft = Offset(innerLeft, tableTop),
+                    size = Size(innerRight - innerLeft, tableBottom - tableTop),
+                    style = DrawStroke(width = lineWidth),
+                )
+            }
+        }
+
+        PageBackground.MUSIC -> {
+            clipRect(pageLeft, pageTop, pageRight, pageBottom) {
+                val margin = 70f * scale
+                val innerLeft = pageLeft + margin
+                val innerRight = pageRight - margin
+                val staffGap = 14f * scale
+                val systemGap = 62f * scale
+                val lineWidth = 1f * scale.coerceAtLeast(0.3f)
+                var systemTop = pageTop + 100f * scale
+
+                drawTemplateLabel(
+                    text = "MUSIC",
+                    x = innerLeft,
+                    y = pageTop + 58f * scale,
+                    scale = scale,
+                    size = 20f,
+                )
+                while (systemTop + staffGap * 4f < pageBottom - 40f * scale) {
+                    for (line in 0..4) {
+                        val y = systemTop + staffGap * line
+                        drawLine(
+                            color = RuleColor.copy(alpha = 0.75f),
+                            start = Offset(innerLeft, y),
+                            end = Offset(innerRight, y),
+                            strokeWidth = lineWidth,
+                        )
+                    }
+                    listOf(innerLeft, innerRight).forEach { x ->
+                        drawLine(
+                            color = GridColor.copy(alpha = 0.80f),
+                            start = Offset(x, systemTop),
+                            end = Offset(x, systemTop + staffGap * 4f),
+                            strokeWidth = lineWidth * 1.2f,
+                        )
+                    }
+                    systemTop += staffGap * 4f + systemGap
+                }
+            }
+        }
+
+        PageBackground.STORYBOARD -> {
+            clipRect(pageLeft, pageTop, pageRight, pageBottom) {
+                val margin = 44f * scale
+                val innerLeft = pageLeft + margin
+                val innerRight = pageRight - margin
+                val contentTop = pageTop + 100f * scale
+                val contentBottom = pageBottom - 44f * scale
+                val gap = 18f * scale
+                val lineWidth = 1.1f * scale.coerceAtLeast(0.3f)
+                val thin = 0.9f * scale.coerceAtLeast(0.3f)
+                val columns = 2
+                val rows = 3
+                val cellWidth = (innerRight - innerLeft - gap * (columns - 1)) / columns
+                val cellHeight = (contentBottom - contentTop - gap * (rows - 1)) / rows
+
+                drawTemplateLabel(
+                    text = "STORYBOARD",
+                    x = innerLeft,
+                    y = pageTop + 58f * scale,
+                    scale = scale,
+                    size = 20f,
+                )
+                for (row in 0 until rows) {
+                    for (column in 0 until columns) {
+                        val x = innerLeft + column * (cellWidth + gap)
+                        val y = contentTop + row * (cellHeight + gap)
+                        drawRoundRect(
+                            color = GridColor.copy(alpha = 0.72f),
+                            topLeft = Offset(x, y),
+                            size = Size(cellWidth, cellHeight),
+                            cornerRadius = CornerRadius(8f * scale, 8f * scale),
+                            style = DrawStroke(width = lineWidth),
+                        )
+                        drawLine(
+                            color = RuleColor.copy(alpha = 0.55f),
+                            start = Offset(x + 10f * scale, y + cellHeight - 24f * scale),
+                            end = Offset(x + cellWidth - 10f * scale, y + cellHeight - 24f * scale),
+                            strokeWidth = thin,
+                        )
+                    }
+                }
+            }
+        }
+
+        PageBackground.CHECKLIST -> {
+            clipRect(pageLeft, pageTop, pageRight, pageBottom) {
+                val margin = 48f * scale
+                val innerLeft = pageLeft + margin
+                val innerRight = pageRight - margin
+                val contentTop = pageTop + 100f * scale
+                val contentBottom = pageBottom - 44f * scale
+                val gap = 30f * scale
+                val columnWidth = (innerRight - innerLeft - gap) / 2f
+                val thin = 0.9f * scale.coerceAtLeast(0.3f)
+
+                drawTemplateLabel(
+                    text = "CHECKLIST",
+                    x = innerLeft,
+                    y = pageTop + 58f * scale,
+                    scale = scale,
+                    size = 20f,
+                )
+                for (column in 0..1) {
+                    val x = innerLeft + column * (columnWidth + gap)
+                    var y = contentTop
+                    while (y + 28f * scale < contentBottom) {
+                        val box = 16f * scale
+                        drawRoundRect(
+                            color = GridColor.copy(alpha = 0.85f),
+                            topLeft = Offset(x, y),
+                            size = Size(box, box),
+                            cornerRadius = CornerRadius(3f * scale, 3f * scale),
+                            style = DrawStroke(width = thin),
+                        )
+                        drawLine(
+                            color = RuleColor.copy(alpha = 0.58f),
+                            start = Offset(x + box + 10f * scale, y + box / 2f),
+                            end = Offset(x + columnWidth, y + box / 2f),
+                            strokeWidth = thin,
+                        )
+                        y += 42f * scale
+                    }
+                }
+                drawLine(
+                    color = GridColor.copy(alpha = 0.65f),
+                    start = Offset(innerLeft + columnWidth + gap / 2f, contentTop),
+                    end = Offset(innerLeft + columnWidth + gap / 2f, contentBottom),
+                    strokeWidth = thin,
+                )
+            }
+        }
     }
+}
+
+private fun DrawScope.drawTemplateLabel(
+    text: String,
+    x: Float,
+    y: Float,
+    scale: Float,
+    size: Float = 14f,
+    color: Color = DotColor.copy(alpha = 0.9f),
+) {
+    if (scale <= 0f) return
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = color.toArgb()
+        textSize = size * scale
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
+    drawContext.canvas.nativeCanvas.drawText(text, x, y, paint)
 }
 
 fun DrawScope.drawStrokeBody(

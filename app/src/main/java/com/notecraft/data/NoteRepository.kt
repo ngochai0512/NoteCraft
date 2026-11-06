@@ -66,6 +66,7 @@ class NoteRepository(context: Context) {
         put("title", title)
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
+        if (coverTone != null) put("coverTone", coverTone)
         put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
     }
 
@@ -120,6 +121,7 @@ class NoteRepository(context: Context) {
             createdAt = json.optLong("createdAt", now),
             updatedAt = json.optLong("updatedAt", now),
             pages = pages,
+            coverTone = json.optString("coverTone").takeIf { it.isNotBlank() },
         )
     }
 

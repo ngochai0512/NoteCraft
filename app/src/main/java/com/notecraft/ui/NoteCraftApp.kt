@@ -5,6 +5,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.notecraft.ui.editor.EditorScreen
 import com.notecraft.ui.library.LibraryScreen
+import com.notecraft.ui.settings.SettingsScreen
 
 @Composable
 fun NoteCraftApp(viewModel: NoteCraftViewModel) {
@@ -12,9 +13,9 @@ fun NoteCraftApp(viewModel: NoteCraftViewModel) {
         viewModel.flush()
     }
 
-    if (viewModel.editor != null) {
-        EditorScreen(viewModel)
-    } else {
-        LibraryScreen(viewModel)
+    when {
+        viewModel.settingsOpen -> SettingsScreen(viewModel)
+        viewModel.editor != null -> EditorScreen(viewModel)
+        else -> LibraryScreen(viewModel)
     }
 }

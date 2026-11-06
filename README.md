@@ -19,7 +19,7 @@ UI: Jetpack Compose + Material 3
 - **Ball pen** — uniform, crisp ink line
 - **Brush pen** — wide, soft strokes with strong pressure response
 - **Marker** — broad translucent highlighter with multiply blending
-- **Eraser** — adjustable stroke eraser that removes ink, shapes, and text
+- **Eraser** — adjustable partial eraser that removes only the touched part of a stroke; shapes and text are removed whole
 - **Shapes** — line, arrow, rectangle, and ellipse
 - **Tape** — translucent washi-style strip for covering and decorating
 - **Laser pointer** — a red trail that fades when you lift your finger
@@ -34,7 +34,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 ### Canvas
 
 - Edge-to-edge paper that fills the editor; no desk backdrop, page border, or drop shadow
-- Ruled 8 mm, squared graph, dotted 5 mm, Cornell and blank paper drawn continuously across the viewport
+- Ruled, squared graph, dotted and blank paper drawn continuously across the viewport; Cornell, planner, weekly, music, storyboard and checklist templates stay page-bounded
 - Draw anywhere on the visible paper, including outside the logical page bounds
 - Pinch to zoom up to 8× with unbounded two-finger pan
 - Floating zoom controls with fit-page, page-thumbnail, and page-background buttons
@@ -44,22 +44,28 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 
 - Create, rename, duplicate, and delete notes
 - Add, duplicate, delete, and reorder pages
-- Page backgrounds: blank, ruled, squared graph, dotted and Cornell
+- Page backgrounds: blank, ruled, squared graph, dotted, Cornell, daily planner, weekly planner, music staff, storyboard and checklist
 - Compact page navigator with previous/next controls
 - Page thumbnail drawer accessible from the zoom controls, with a quick add-page tile
 - Live notebook-cover previews in the library
 - Notebook covers with spine crease, ribbon bookmark and label badge
+- Cover-tone chooser in the library menu and editor, with an automatic default
+- Export a notebook to PDF through the system document picker
 - Search notes by title
 - Sort by recently updated, recently created, or title
 - Adaptive grid that shows more columns on larger screens
-- Settings button for upcoming preferences
 
 ### Colors and preferences
 
 - 12 preset ink colors
 - Custom HSV color picker
 - Per-tool color and size settings
-- Tool settings persist across app launches
+- Dedicated Settings screen (not a dialog) with a back action
+- Theme override: system, light, or dark
+- Default drawing tool and default paper for new pages
+- Toggle for the editor’s autosave indicator
+- Palm rejection, cloud backup, handwriting search and audio notes are visible as **Coming soon** placeholders
+- Tool and app preferences persist across app launches
 
 ### Appearance
 
@@ -121,6 +127,12 @@ Or build a release APK (unsigned by default):
 ./gradlew assembleRelease
 ```
 
+Run the JVM unit tests:
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
 ### Testing display cutouts
 
 Simulate a cutout on an emulator or device with Developer options:
@@ -148,7 +160,7 @@ Update that path if the SDK is installed elsewhere.
 | Action | Gesture |
 | --- | --- |
 | Draw | One finger with a drawing tool |
-| Erase | Drag the eraser over ink, shapes, or text |
+| Erase | Drag the eraser over ink to remove the touched portion; shapes and text are removed whole |
 | Select | Lasso tool → draw a loop around items |
 | Move selection | Drag inside the selection bounds with the lasso tool |
 | Duplicate / delete selection | Use the selection toolbar above the tool row |
@@ -171,7 +183,8 @@ app/src/main/
 │   ├── data/
 │   │   └── NoteRepository.kt         # JSON file persistence
 │   ├── util/
-│   │   ├── Geometry.kt               # Hit tests, lasso selection, bounds
+│   │   ├── Geometry.kt               # Hit tests, partial eraser, lasso, bounds
+│   │   ├── PdfExporter.kt            # Notebook-to-PDF rendering
 │   │   └── Format.kt                 # Relative note dates
 │   └── ui/
 │       ├── NoteCraftApp.kt           # Library ↔ editor navigation
@@ -179,8 +192,10 @@ app/src/main/
 │       ├── theme/Theme.kt            # Material 3 colors, typography, palette
 │       ├── components/
 │       │   ├── Dialogs.kt            # Rename, confirm, and text-entry dialogs
-│       │   ├── NoteThumbnail.kt      # Library page previews
-│       │   └── SettingsDialog.kt     # Home-screen settings
+│       │   ├── CoverToneDialog.kt    # Notebook cover-tone chooser
+│       │   └── NoteThumbnail.kt      # Library page previews
+│       ├── settings/
+│       │   └── SettingsScreen.kt     # Dedicated preferences screen
 │       ├── library/
 │       │   └── LibraryScreen.kt      # Note grid, search, sort, note actions
 │       └── editor/
@@ -203,7 +218,7 @@ filesDir/notes/<note-id>.json
 
 Notes contain pages, and each page contains strokes and text items. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
 
-A stroke saves:
+A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A stroke saves:
 
 - Tool type
 - ARGB color
@@ -219,9 +234,11 @@ Saving is debounced while editing, then flushed when the editor closes or the ap
 - **State** lives in `NoteCraftViewModel`, exposed to Compose through `mutableStateOf`.
 - **Persistence** runs on `Dispatchers.IO`; a `Mutex` serializes file writes.
 - **Undo/redo** stores immutable page-list snapshots, capped at 80 entries.
-- **Drawing** is rendered directly on a Compose `Canvas`; no bitmap layers are created.
+- **Drawing** is rendered directly on a Compose `Canvas` in the editor; PDF export rasterizes pages separately.
 - **Gestures** use `awaitEachGesture` with a custom state machine so one-finger drawing and two-finger zoom/pan work together.
 - **Tool preferences** are stored in `SharedPreferences` under `notecraft_tool_prefs`.
+- **App preferences** (theme, default tool, default paper, autosave indicator) are stored under `notecraft_settings`.
+- **PDF export** rasterizes each page through the same renderer at 150 dpi and writes an A4 PDF selected with the system document picker.
 - **Ink authoring** uses `androidx.ink:ink-authoring-compose` for fountain, ball, brush, and highlighter tools. Wet strokes are rendered by `InProgressStrokes`; finished strokes are converted to immutable NoteCraft strokes and handed to the existing page state, so the downstream canvas, persistence, history, eraser, and lasso remain the source of truth.
 - **Native Ink** requires the Ink native loader libraries, which are packaged for all supported ABIs in the APK.
 
@@ -229,10 +246,10 @@ Saving is debounced while editing, then flushed when the editor closes or the ap
 
 This is intentionally a compact version of a full note-taking app:
 
-- The eraser removes entire strokes rather than erasing pixels.
+- The eraser removes the touched portion of a stroke rather than individual pixels; shapes and text are removed whole.
 - Text does not auto-wrap; use line breaks for multi-line notes.
 - Undo history lasts for the current app session only.
-- Notes are local to the device; there is no sync, export, or cloud backup.
+- Notes are local to the device; there is no sync, cloud backup, or import yet. PDF export is available.
 - Pages are navigated with the page controls and thumbnail drawer rather than a continuous swipe canvas.
 - Bookmarks, media insertion and drag-and-drop page reordering are not implemented yet.
 - Ink is used for authoring and wet rendering; dry strokes still use NoteCraft's renderer, so wet and dry Ink strokes can differ slightly.
