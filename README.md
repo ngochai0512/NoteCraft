@@ -295,4 +295,7 @@ Or set **Settings → Build, Execution, Deployment → Build Tools → Gradle �
 
 ## License
 
-This project is provided as a sample application. Add a license file if you plan to distribute it.
+NoteCraft is released under the [MIT License](LICENSE).
+
+Third-party libraries retain their own licenses, including AndroidX, Jetpack Compose, Jetpack Ink, and Material Icons (Apache License 2.0).
+
