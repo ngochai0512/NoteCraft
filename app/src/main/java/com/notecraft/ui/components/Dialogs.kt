@@ -1,11 +1,14 @@
 package com.notecraft.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,6 +24,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.notecraft.model.TextAlignment
 import kotlinx.coroutines.delay
 
 @Composable
@@ -35,6 +39,8 @@ fun TextEntryDialog(
     minLines: Int = 1,
     maxLines: Int = 1,
     supportingText: String? = null,
+    alignment: TextAlignment? = null,
+    onAlignmentChange: ((TextAlignment) -> Unit)? = null,
 ) {
     var value by remember(initialValue) { mutableStateOf(initialValue) }
     val canConfirm = allowEmpty || value.isNotBlank()
@@ -73,6 +79,23 @@ fun TextEntryDialog(
                         },
                     ),
                 )
+                if (alignment != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        TextAlignment.entries.forEach { option ->
+                            FilterChip(
+                                selected = alignment == option,
+                                onClick = { onAlignmentChange?.invoke(option) },
+                                label = { Text(option.label) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
                 if (supportingText != null) {
                     Text(
                         text = supportingText,

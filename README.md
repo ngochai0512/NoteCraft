@@ -19,15 +19,16 @@ UI: Jetpack Compose + Material 3
 - **Ball pen** — uniform, crisp ink line
 - **Brush pen** — wide, soft strokes with strong pressure response
 - **Marker** — broad translucent highlighter with multiply blending
-- **Eraser** — adjustable partial eraser that removes only the touched part of a stroke; shapes and text are removed whole
+- **Eraser** — adjustable eraser with **Partial** (split the touched stroke) and **Object** (remove the whole stroke) modes; shapes and text are removed whole
 - **Shapes** — line, arrow, rectangle, and ellipse
 - **Tape** — translucent washi-style strip for covering and decorating
 - **Laser pointer** — a red trail that fades when you lift your finger
 - **Pencil** — textured graphite line
-- **Text** — place and edit typed notes
+- **Text** — resizable typed text boxes with wrapping, left/center/right alignment, and edit-in-place
 - **Lasso** — select strokes and text to move, duplicate or delete
+- **Ruler** — toggle a draggable straight-edge guide; strokes started near it snap to a straight line
 
-**Jetpack Ink 1.0.0** powers low-latency authoring for the fountain pen, ball pen, brush pen, and highlighter. Finished Ink strokes are normalized into NoteCraft's page model so persistence, undo/redo, erasing, and lasso selection continue to work with the rest of the app. Pencil, shapes, tape, laser, text, and lasso remain custom.
+**Jetpack Ink 1.0.0** powers low-latency authoring for the fountain pen, ball pen, brush pen, and highlighter. Finished Ink strokes are normalized into NoteCraft's page model so persistence, undo/redo, erasing, and lasso selection continue to work with the rest of the app. Pencil, shapes, tape, laser, text, and lasso remain custom. Ruler and stylus-only modes use the custom renderer so snapped points and pointer types stay under app control.
 
 Tapping a tool selects it and opens that tool's color, size, and shape options in a compact dropdown. Tap the same tool again or touch outside to dismiss it; the ribbon otherwise stays collapsed so the canvas keeps more space.
 
@@ -37,15 +38,18 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Ruled, squared graph, dotted and blank paper drawn continuously across the viewport; Cornell, planner, weekly, music, storyboard and checklist templates stay page-bounded
 - Draw anywhere on the visible paper, including outside the logical page bounds
 - Pinch to zoom up to 8× with unbounded two-finger pan
-- Floating zoom controls with fit-page, page-thumbnail, and page-background buttons
+- Floating zoom controls with fit-page, page-thumbnail, page-background, and ruler buttons
+- Straight-edge ruler guide: drag its handle to move it and slide sideways to rotate, then draw along it for perfectly straight lines
 - Undo and redo for every canvas, text, selection, and page operation
 
 ### Notes and pages
 
 - Create, rename, duplicate, and delete notes
-- Add, duplicate, delete, and reorder pages
+- Add, duplicate, delete, and reorder pages by long-pressing a page thumbnail and dragging it
+- Star a page as a bookmark; the star is shown on its page-drawer thumbnail
 - Page backgrounds: blank, ruled, squared graph, dotted, Cornell, daily planner, weekly planner, music staff, storyboard and checklist
 - Compact page navigator with previous/next controls
+- Two-page spread on tablets in landscape, with the left page as the current page and both pages editable
 - Page thumbnail drawer accessible from the zoom controls, with a quick add-page tile
 - Live notebook-cover previews in the library
 - Notebook covers with spine crease, ribbon bookmark and label badge
@@ -58,13 +62,15 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 ### Colors and preferences
 
 - 12 preset ink colors
+- Recently used inks shown in each tool's dropdown
 - Custom HSV color picker
-- Per-tool color and size settings
+- Per-tool color, size, and eraser-mode settings
 - Dedicated Settings screen (not a dialog) with a back action
 - Theme override: system, light, or dark
 - Default drawing tool and default paper for new pages
 - Toggle for the editor’s autosave indicator
-- Palm rejection, cloud backup, handwriting search and audio notes are visible as **Coming soon** placeholders
+- Stylus-only mode that ignores finger drawing and palm touches while keeping two-finger pan and zoom
+- Cloud backup, handwriting search and audio notes are visible as **Coming soon** placeholders
 - Tool and app preferences persist across app launches
 
 ### Appearance
@@ -159,8 +165,9 @@ Update that path if the SDK is installed elsewhere.
 
 | Action | Gesture |
 | --- | --- |
-| Draw | One finger with a drawing tool |
-| Erase | Drag the eraser over ink to remove the touched portion; shapes and text are removed whole |
+| Draw | One finger or stylus with a drawing tool |
+| Erase | Drag the eraser over ink; **Partial** splits the stroke, **Object** removes the whole stroke; shapes and text are removed whole |
+| Straight line | Enable the ruler, drag its handle to position and rotate it, then draw near the edge |
 | Select | Lasso tool → draw a loop around items |
 | Move selection | Drag inside the selection bounds with the lasso tool |
 | Duplicate / delete selection | Use the selection toolbar above the tool row |
@@ -168,6 +175,9 @@ Update that path if the SDK is installed elsewhere.
 | Zoom | Pinch with two fingers, or use the canvas zoom buttons |
 | Add text | Text tool → tap an empty spot on the page |
 | Edit text | Text tool → tap existing text |
+| Resize text box | Text tool → drag the box's bottom-right handle |
+| Bookmark a page | Open the page drawer and tap its star, or use the editor menu |
+| Reorder pages | Open the page drawer, long-press a thumbnail, and drag it |
 | Change page | Use the previous/next arrows, or open the page-thumbnail drawer from the zoom controls |
 | Add a page | Open the page-thumbnail drawer from the zoom controls and tap **Add page** |
 
@@ -218,7 +228,7 @@ filesDir/notes/<note-id>.json
 
 Notes contain pages, and each page contains strokes and text items. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
 
-A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A stroke saves:
+A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A page may also store `bookmarked`. A stroke saves:
 
 - Tool type
 - ARGB color
@@ -226,6 +236,8 @@ A note also stores an optional `coverTone` name; when absent, the library derive
 - Touch points with pressure values
 - Optional shape type
 - A seed for deterministic pencil texture
+
+A text item stores its position, text, color, font size, optional `width` in page units, and an optional `alignment` (`LEFT`, `CENTER`, `RIGHT`). Missing width means a legacy auto-width box that only breaks on explicit newlines; new text boxes wrap inside their stored width.
 
 Saving is debounced while editing, then flushed when the editor closes or the app goes to the background.
 
@@ -236,8 +248,8 @@ Saving is debounced while editing, then flushed when the editor closes or the ap
 - **Undo/redo** stores immutable page-list snapshots, capped at 80 entries.
 - **Drawing** is rendered directly on a Compose `Canvas` in the editor; PDF export rasterizes pages separately.
 - **Gestures** use `awaitEachGesture` with a custom state machine so one-finger drawing and two-finger zoom/pan work together.
-- **Tool preferences** are stored in `SharedPreferences` under `notecraft_tool_prefs`.
-- **App preferences** (theme, default tool, default paper, autosave indicator) are stored under `notecraft_settings`.
+- **Tool preferences** are stored in `SharedPreferences` under `notecraft_tool_prefs`, including recently used colors and the eraser mode.
+- **App preferences** (theme, default tool, default paper, autosave indicator, stylus-only mode) are stored under `notecraft_settings`.
 - **PDF export** rasterizes each page through the same renderer at 150 dpi and writes an A4 PDF selected with the system document picker.
 - **Ink authoring** uses `androidx.ink:ink-authoring-compose` for fountain, ball, brush, and highlighter tools. Wet strokes are rendered by `InProgressStrokes`; finished strokes are converted to immutable NoteCraft strokes and handed to the existing page state, so the downstream canvas, persistence, history, eraser, and lasso remain the source of truth.
 - **Native Ink** requires the Ink native loader libraries, which are packaged for all supported ABIs in the APK.
@@ -246,14 +258,15 @@ Saving is debounced while editing, then flushed when the editor closes or the ap
 
 This is intentionally a compact version of a full note-taking app:
 
-- The eraser removes the touched portion of a stroke rather than individual pixels; shapes and text are removed whole.
-- Text does not auto-wrap; use line breaks for multi-line notes.
+- The eraser removes the touched portion of a stroke (Partial) or the whole stroke (Object) rather than individual pixels; shapes and text are removed whole.
+- Text boxes wrap at their stored width, but height is automatic; there is no vertical box constraint.
 - Undo history lasts for the current app session only.
 - Notes are local to the device; there is no sync, cloud backup, or import yet. PDF export is available.
-- Pages are navigated with the page controls and thumbnail drawer rather than a continuous swipe canvas.
-- Bookmarks, media insertion and drag-and-drop page reordering are not implemented yet.
+- Pages are navigated with the page controls and thumbnail drawer rather than a continuous swipe canvas; tablets in landscape show a two-page spread.
+- Media insertion and collaboration are not implemented yet.
 - Ink is used for authoring and wet rendering; dry strokes still use NoteCraft's renderer, so wet and dry Ink strokes can differ slightly.
 - Pencil, shape, tape, laser, text, and lasso interactions remain custom.
+- The two-page spread is tablet-landscape only; stylus-only mode uses the custom renderer instead of the Ink overlay.
 
 ## Design system
 

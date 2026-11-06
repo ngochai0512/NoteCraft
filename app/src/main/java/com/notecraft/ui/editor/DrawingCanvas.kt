@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FitScreen
 import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Straighten
 import androidx.compose.material.icons.outlined.ZoomIn
 import androidx.compose.material.icons.outlined.ZoomOut
 import androidx.compose.material3.Icon
@@ -36,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -43,19 +47,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.notecraft.model.PAGE_HEIGHT
@@ -67,6 +76,8 @@ import com.notecraft.model.Stroke as InkStroke
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.model.newId
+import com.notecraft.util.approximateBounds
+import com.notecraft.util.hitHandle
 import com.notecraft.util.hitTest
 import com.notecraft.util.selectInsidePolygon
 import com.notecraft.util.selectionBounds
@@ -77,7 +88,10 @@ import androidx.ink.brush.SelfOverlap
 import androidx.ink.brush.StockBrushes
 import androidx.ink.strokes.Stroke as InkApiStroke
 import android.util.Log
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.sin
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -89,7 +103,7 @@ private class CanvasViewport {
     var pan by mutableStateOf(Offset.Zero)
 }
 
-private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, LASSO, MOVE, LASER }
+private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, TEXT_RESIZE, LASSO, MOVE, LASER }
 
 /** Freehand tools rendered through Jetpack Ink while authoring. */
 private val InkToolTypes = setOf(
@@ -102,22 +116,29 @@ private val InkToolTypes = setOf(
 @Composable
 fun DrawingCanvas(
     page: Page,
+    secondPage: Page? = null,
+    pageIndex: Int = 0,
     tool: ToolType,
     color: Long,
     width: Float,
     shapeType: ShapeType,
+    stylusOnly: Boolean,
     selectedStrokeIds: Set<String>,
     selectedTextIds: Set<String>,
-    onStrokeCommitted: (InkStroke) -> Unit,
+    selectionPageIndex: Int,
+    onStrokeCommitted: (InkStroke, Int) -> Unit,
     onEraseStart: () -> Unit,
-    onEraseMove: (Offset) -> Unit,
+    onEraseMove: (Offset, Int) -> Unit,
     onEraseEnd: () -> Unit,
-    onLassoSelected: (Set<String>, Set<String>) -> Unit,
+    onLassoSelected: (Int, Set<String>, Set<String>) -> Unit,
     onSelectionMoveStart: () -> Unit,
     onSelectionMove: (Offset) -> Unit,
     onSelectionMoveEnd: () -> Unit,
-    onAddText: (Offset) -> Unit,
+    onAddText: (Offset, Int) -> Unit,
     onEditText: (TextItem) -> Unit,
+    onTextResizeStart: () -> Unit,
+    onTextResize: (String, Float) -> Unit,
+    onTextResizeEnd: () -> Unit,
     onShowPages: () -> Unit,
     onShowPageBackground: () -> Unit,
     modifier: Modifier = Modifier,
@@ -125,15 +146,24 @@ fun DrawingCanvas(
     val configuration = LocalConfiguration.current
     val compactHeight = configuration.screenHeightDp < 480
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    val viewport = remember(page.id) { CanvasViewport() }
+    val isSpread = secondPage != null
+    val viewport = remember(page.id, secondPage?.id) { CanvasViewport() }
     var previewStroke by remember { mutableStateOf<InkStroke?>(null) }
     var lassoPreview by remember { mutableStateOf<List<Pt>>(emptyList()) }
     var laserPoints by remember { mutableStateOf<List<Pt>>(emptyList()) }
     var laserFadeKey by remember { mutableStateOf(0) }
+    var rulerEnabled by remember { mutableStateOf(false) }
+    var rulerFraction by remember { mutableFloatStateOf(0.42f) }
+    var rulerAngle by remember { mutableFloatStateOf(0f) }
+    var gesturePage by remember { mutableIntStateOf(pageIndex) }
+    val inkTargetPage = remember { intArrayOf(pageIndex) }
+    val inkOrigin = remember { arrayOf(Offset.Zero) }
 
     val currentPage by rememberUpdatedState(page)
+    val currentSecondPage by rememberUpdatedState(secondPage)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokeIds)
     val currentSelectedTexts by rememberUpdatedState(selectedTextIds)
+    val currentSelectionPage by rememberUpdatedState(selectionPageIndex)
     val commitStroke by rememberUpdatedState(onStrokeCommitted)
     val eraseStart by rememberUpdatedState(onEraseStart)
     val eraseMove by rememberUpdatedState(onEraseMove)
@@ -144,13 +174,16 @@ fun DrawingCanvas(
     val selectionMoveEnd by rememberUpdatedState(onSelectionMoveEnd)
     val addText by rememberUpdatedState(onAddText)
     val editText by rememberUpdatedState(onEditText)
+    val textResizeStart by rememberUpdatedState(onTextResizeStart)
+    val textResize by rememberUpdatedState(onTextResize)
+    val textResizeEnd by rememberUpdatedState(onTextResizeEnd)
 
-    LaunchedEffect(page.id) {
+    LaunchedEffect(page.id, secondPage?.id) {
         viewport.zoom = 1f
         viewport.pan = Offset.Zero
     }
 
-    LaunchedEffect(page.id, tool) {
+    LaunchedEffect(page.id, secondPage?.id, tool) {
         previewStroke = null
         lassoPreview = emptyList()
         laserPoints = emptyList()
@@ -164,28 +197,78 @@ fun DrawingCanvas(
         }
     }
 
+    fun pageFor(index: Int): Page {
+        if (index == 1) return currentSecondPage ?: currentPage
+        return currentPage
+    }
+
+    fun totalPageWidth(): Float = if (isSpread) PAGE_WIDTH * 2f + SpreadGap else PAGE_WIDTH
+
     fun baseScale(size: IntSize): Float {
         if (size.width == 0 || size.height == 0) return 1f
-        return min(size.width / PAGE_WIDTH, size.height / PAGE_HEIGHT)
+        return min(size.width / totalPageWidth(), size.height / PAGE_HEIGHT)
     }
 
     fun currentTransform(): CanvasTransform {
         val scale = baseScale(canvasSize) * viewport.zoom
         val origin = Offset(
-            (canvasSize.width - PAGE_WIDTH * scale) / 2f + viewport.pan.x,
+            (canvasSize.width - totalPageWidth() * scale) / 2f + viewport.pan.x,
             (canvasSize.height - PAGE_HEIGHT * scale) / 2f + viewport.pan.y,
         )
         return CanvasTransform(scale, origin)
     }
 
-    fun screenToPage(position: Offset): Offset {
+    fun pageOriginFor(index: Int): Offset {
         val transform = currentTransform()
-        if (transform.scale <= 0f) return Offset.Zero
-        return (position - transform.origin) / transform.scale
+        return Offset(
+            transform.origin.x + index * (PAGE_WIDTH + SpreadGap) * transform.scale,
+            transform.origin.y,
+        )
     }
 
-    // The paper is effectively infinite, so strokes are accepted anywhere on the canvas.
-    fun isInsidePage(point: Offset): Boolean = true
+    fun pageAt(position: Offset): Pair<Int, Offset> {
+        val transform = currentTransform()
+        if (transform.scale <= 0f) return 0 to Offset.Zero
+        val rawX = (position.x - transform.origin.x) / transform.scale
+        val rawY = (position.y - transform.origin.y) / transform.scale
+        if (!isSpread) return 0 to Offset(rawX, rawY)
+        val secondStart = PAGE_WIDTH + SpreadGap / 2f
+        val index = if (rawX >= secondStart) 1 else 0
+        val localX = rawX - index * (PAGE_WIDTH + SpreadGap)
+        return index to Offset(localX, rawY)
+    }
+
+    fun rulerScreenY(): Float = canvasSize.height * rulerFraction
+
+    fun rulerPivot(): Offset = Offset(canvasSize.width / 2f, rulerScreenY())
+
+    fun rulerDirection(): Offset {
+        val radians = rulerAngle * PI.toFloat() / 180f
+        return Offset(cos(radians), sin(radians))
+    }
+
+    fun projectToRuler(position: Offset): Offset {
+        val pivot = rulerPivot()
+        val direction = rulerDirection()
+        val projection = (position.x - pivot.x) * direction.x + (position.y - pivot.y) * direction.y
+        return pivot + direction * projection
+    }
+
+    fun distanceToRuler(position: Offset): Float {
+        val projected = projectToRuler(position)
+        return hypot(position.x - projected.x, position.y - projected.y)
+    }
+
+    fun localPointFor(screenPosition: Offset, targetIndex: Int): Offset {
+        val transform = currentTransform()
+        if (transform.scale <= 0f) return Offset.Zero
+        val point = if (rulerEnabled) projectToRuler(screenPosition) else screenPosition
+        val origin = pageOriginFor(targetIndex)
+        return Offset(
+            (point.x - origin.x) / transform.scale,
+            (point.y - origin.y) / transform.scale,
+        )
+    }
 
     fun applyTransform(focus: Offset, panChange: Offset, zoomChange: Float) {
         if (canvasSize.width == 0 || canvasSize.height == 0) return
@@ -194,8 +277,9 @@ fun DrawingCanvas(
         val focusInPage = (previousFocus - transform.origin) / transform.scale
         val newZoom = (viewport.zoom * zoomChange).coerceIn(1f, 8f)
         val newScale = baseScale(canvasSize) * newZoom
+        val totalWidth = totalPageWidth()
         val candidate = Offset(
-            focus.x - focusInPage.x * newScale - (canvasSize.width - PAGE_WIDTH * newScale) / 2f,
+            focus.x - focusInPage.x * newScale - (canvasSize.width - totalWidth * newScale) / 2f,
             focus.y - focusInPage.y * newScale - (canvasSize.height - PAGE_HEIGHT * newScale) / 2f,
         )
         viewport.zoom = newZoom
@@ -218,9 +302,13 @@ fun DrawingCanvas(
 
     val hintBackground = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
     val hintText = MaterialTheme.colorScheme.onSurfaceVariant
+    val rulerColor = MaterialTheme.colorScheme.primary
     val inkTransform = currentTransform()
     val inkScale = inkTransform.scale
-    val inkBrush = if (tool in InkToolTypes) {
+    // The ruler snaps custom points, and stylus-only mode needs explicit pointer types, so both
+    // paths use the custom renderer instead of Ink's wet overlay.
+    val useInk = tool in InkToolTypes && !rulerEnabled && !stylusOnly
+    val inkBrush = if (useInk) {
         remember(tool, color, width, inkScale) {
             runCatching { createInkBrush(tool, color, width, inkScale) }
                 .onFailure { Log.e("NoteCraftInk", "Unable to initialize Ink brush", it) }
@@ -229,8 +317,8 @@ fun DrawingCanvas(
     } else {
         null
     }
-    val useInk = inkBrush != null
-    val inkTransformModifier = if (useInk) {
+    val effectiveInk = useInk && inkBrush != null
+    val inkTransformModifier = if (effectiveInk) {
         Modifier.pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) {
@@ -262,12 +350,46 @@ fun DrawingCanvas(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(tool, page.id, color, width, shapeType, selectedStrokeIds, selectedTextIds) {
+                .pointerInput(
+                    tool,
+                    page.id,
+                    secondPage?.id,
+                    color,
+                    width,
+                    shapeType,
+                    selectedStrokeIds,
+                    selectedTextIds,
+                    selectionPageIndex,
+                    stylusOnly,
+                    rulerEnabled,
+                    rulerAngle,
+                    isSpread,
+                ) {
                     val touchSlop = viewConfiguration.touchSlop
+                    val handleTolerance = 22.dp.toPx()
+
+                    fun applyMultiTouch(event: androidx.compose.ui.input.pointer.PointerEvent) {
+                        val zoomChange = event.calculateZoom()
+                        val panChange = event.calculatePan()
+                        val centroid = event.calculateCentroid(useCurrent = true)
+                        if (centroid != Offset.Unspecified && (zoomChange != 1f || panChange != Offset.Zero)) {
+                            applyTransform(centroid, panChange, zoomChange)
+                        }
+                        event.changes.forEach { it.consume() }
+                    }
+
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        val downIsStylus = down.type == PointerType.Stylus
+                        val (targetIndex, downPage) = pageAt(down.position)
+                        val targetPage = pageFor(targetIndex)
+                        gesturePage = targetIndex
 
-                        if (useInk) {
+                        if (effectiveInk) {
+                            if (!stylusOnly || downIsStylus) {
+                                inkTargetPage[0] = targetIndex
+                                inkOrigin[0] = pageOriginFor(targetIndex)
+                            }
                             // The Ink overlay owns the wet stroke. Wait out the gesture without
                             // consuming so it remains available to InProgressStrokes.
                             var event = awaitPointerEvent()
@@ -277,7 +399,6 @@ fun DrawingCanvas(
                             return@awaitEachGesture
                         }
 
-                        val downPage = screenToPage(down.position)
                         var mode = GestureMode.NONE
                         var points = mutableListOf<Pt>()
                         var lassoPoints = mutableListOf<Pt>()
@@ -286,6 +407,14 @@ fun DrawingCanvas(
                         var transformMode = false
                         var eraseActive = false
                         var selectionMoveActive = false
+                        var textResizeActive = false
+                        var resizeTextId: String? = null
+                        var resizeStartWidth = 0f
+                        var resizeStartX = 0f
+                        var rulerSnap = false
+                        if (rulerEnabled && distanceToRuler(down.position) <= 64.dp.toPx()) {
+                            rulerSnap = true
+                        }
 
                         fun pressureOf(change: PointerInputChange): Float {
                             val raw = change.pressure
@@ -305,59 +434,93 @@ fun DrawingCanvas(
                             )
                         }
 
-                        if (isInsidePage(downPage)) {
-                            when (tool) {
-                                ToolType.FOUNTAIN_PEN,
-                                ToolType.BALL_PEN,
-                                ToolType.BRUSH_PEN,
-                                ToolType.PENCIL,
-                                ToolType.HIGHLIGHTER,
-                                ToolType.TAPE,
-                                -> {
+                        val handleHit = if (tool == ToolType.TEXT) {
+                            val transform = currentTransform()
+                            val tolerance = if (transform.scale > 0f) handleTolerance / transform.scale else handleTolerance
+                            targetPage.texts.lastOrNull { item -> item.hitHandle(downPage.x, downPage.y, tolerance) }
+                        } else {
+                            null
+                        }
+
+                        when (tool) {
+                            ToolType.FOUNTAIN_PEN,
+                            ToolType.BALL_PEN,
+                            ToolType.BRUSH_PEN,
+                            ToolType.PENCIL,
+                            ToolType.HIGHLIGHTER,
+                            ToolType.TAPE,
+                            -> {
+                                if (!stylusOnly || downIsStylus) {
                                     mode = GestureMode.DRAW
-                                    points.add(Pt(downPage.x, downPage.y, pressureOf(down)))
+                                    val drawDown = if (rulerSnap) localPointFor(down.position, targetIndex) else downPage
+                                    points.add(Pt(drawDown.x, drawDown.y, pressureOf(down)))
                                     previewStroke = makeStroke()
                                 }
+                            }
 
-                                ToolType.LASER -> {
+                            ToolType.LASER -> {
+                                if (!stylusOnly || downIsStylus) {
                                     mode = GestureMode.LASER
                                     points.add(Pt(downPage.x, downPage.y, pressureOf(down)))
                                     laserPoints = points.toList()
                                 }
+                            }
 
-                                ToolType.SHAPE -> {
+                            ToolType.SHAPE -> {
+                                if (!stylusOnly || downIsStylus) {
                                     mode = GestureMode.SHAPE
-                                    points.add(Pt(downPage.x, downPage.y, 0.6f))
-                                    points.add(Pt(downPage.x, downPage.y, 0.6f))
+                                    val drawDown = if (rulerSnap) localPointFor(down.position, targetIndex) else downPage
+                                    points.add(Pt(drawDown.x, drawDown.y, 0.6f))
+                                    points.add(Pt(drawDown.x, drawDown.y, 0.6f))
                                     previewStroke = makeStroke()
                                 }
+                            }
 
-                                ToolType.ERASER -> {
+                            ToolType.ERASER -> {
+                                if (!stylusOnly || downIsStylus) {
                                     mode = GestureMode.ERASE
                                     eraseActive = true
                                     eraseStart()
-                                    eraseMove(downPage)
+                                    eraseMove(downPage, targetIndex)
                                 }
+                            }
 
-                                ToolType.TEXT -> {
+                            ToolType.TEXT -> {
+                                if (handleHit != null) {
+                                    mode = GestureMode.TEXT_RESIZE
+                                    resizeTextId = handleHit.id
+                                    resizeStartWidth = if (handleHit.width > 0f) {
+                                        handleHit.width
+                                    } else {
+                                        handleHit.approximateBounds().width
+                                    }
+                                    resizeStartX = downPage.x
+                                    textResizeActive = true
+                                    textResizeStart()
+                                } else {
                                     mode = GestureMode.TEXT
                                 }
+                            }
 
-                                ToolType.LASSO -> {
-                                    val bounds = selectionBounds(
-                                        currentPage,
+                            ToolType.LASSO -> {
+                                val transform = currentTransform()
+                                val selectionBounds = if (targetIndex == currentSelectionPage && transform.scale > 0f) {
+                                    selectionBounds(
+                                        pageFor(currentSelectionPage),
                                         currentSelectedStrokes,
                                         currentSelectedTexts,
                                     )
-                                    if (bounds != null && bounds.expand(14f).contains(downPage.x, downPage.y)) {
-                                        mode = GestureMode.MOVE
-                                        selectionMoveActive = true
-                                        selectionMoveStart()
-                                    } else {
-                                        mode = GestureMode.LASSO
-                                        lassoPoints.add(Pt(downPage.x, downPage.y, 0.5f))
-                                        lassoPreview = lassoPoints.toList()
-                                    }
+                                } else {
+                                    null
+                                }
+                                if (selectionBounds != null && selectionBounds.expand(14f).contains(downPage.x, downPage.y)) {
+                                    mode = GestureMode.MOVE
+                                    selectionMoveActive = true
+                                    selectionMoveStart()
+                                } else {
+                                    mode = GestureMode.LASSO
+                                    lassoPoints.add(Pt(downPage.x, downPage.y, 0.5f))
+                                    lassoPreview = lassoPoints.toList()
                                 }
                             }
                         }
@@ -367,7 +530,12 @@ fun DrawingCanvas(
                             val event = awaitPointerEvent()
                             if (event.changes.isEmpty()) break
 
-                            val pressedCount = event.changes.count { it.pressed }
+                            val ignoreFingers = stylusOnly && downIsStylus
+                            val pressedCount = if (ignoreFingers) {
+                                event.changes.count { it.pressed && it.type == PointerType.Stylus }
+                            } else {
+                                event.changes.count { it.pressed }
+                            }
                             if (pressedCount > 1 || transformMode) {
                                 if (!transformMode) {
                                     transformMode = true
@@ -382,64 +550,63 @@ fun DrawingCanvas(
                                         selectionMoveEnd()
                                         selectionMoveActive = false
                                     }
+                                    if (textResizeActive) {
+                                        textResizeEnd()
+                                        textResizeActive = false
+                                    }
                                     mode = GestureMode.NONE
                                 }
-                                val zoomChange = event.calculateZoom()
-                                val panChange = event.calculatePan()
-                                val centroid = event.calculateCentroid(useCurrent = true)
-                                if (centroid != Offset.Unspecified && (zoomChange != 1f || panChange != Offset.Zero)) {
-                                    applyTransform(centroid, panChange, zoomChange)
-                                }
-                                event.changes.forEach { it.consume() }
+                                applyMultiTouch(event)
                             } else {
-                                val change = event.changes.firstOrNull()
+                                val change = if (ignoreFingers) {
+                                    event.changes.firstOrNull { it.type == PointerType.Stylus }
+                                } else {
+                                    event.changes.firstOrNull()
+                                }
                                 if (change != null && change.pressed) {
-                                    val pagePoint = screenToPage(change.position)
+                                    val (_, pagePoint) = pageAt(change.position)
                                     val transform = currentTransform()
                                     when (mode) {
                                         GestureMode.DRAW, GestureMode.SHAPE -> {
-                                            if (isInsidePage(pagePoint)) {
-                                                val last = points.last()
-                                                val distance = hypot(pagePoint.x - last.x, pagePoint.y - last.y)
-                                                if (distance >= 1.6f) {
-                                                    val newPoint = Pt(
-                                                        pagePoint.x,
-                                                        pagePoint.y,
-                                                        pressureOf(change),
-                                                    )
-                                                    if (mode == GestureMode.SHAPE) {
-                                                        points = mutableListOf(points.first(), newPoint)
-                                                    } else {
-                                                        points.add(newPoint)
-                                                    }
-                                                    previewStroke = makeStroke()
+                                            val drawPoint = if (rulerSnap) {
+                                                localPointFor(change.position, targetIndex)
+                                            } else {
+                                                pagePoint
+                                            }
+                                            val last = points.last()
+                                            val distance = hypot(drawPoint.x - last.x, drawPoint.y - last.y)
+                                            if (distance >= 1.6f) {
+                                                val newPoint = Pt(
+                                                    drawPoint.x,
+                                                    drawPoint.y,
+                                                    pressureOf(change),
+                                                )
+                                                if (mode == GestureMode.SHAPE) {
+                                                    points = mutableListOf(points.first(), newPoint)
+                                                } else {
+                                                    points.add(newPoint)
                                                 }
+                                                previewStroke = makeStroke()
                                             }
                                         }
 
                                         GestureMode.LASER -> {
-                                            if (isInsidePage(pagePoint)) {
-                                                val last = points.last()
-                                                if (hypot(pagePoint.x - last.x, pagePoint.y - last.y) >= 1.2f) {
-                                                    points.add(Pt(pagePoint.x, pagePoint.y, pressureOf(change)))
-                                                    laserPoints = points.toList()
-                                                }
+                                            val last = points.last()
+                                            if (hypot(pagePoint.x - last.x, pagePoint.y - last.y) >= 1.2f) {
+                                                points.add(Pt(pagePoint.x, pagePoint.y, pressureOf(change)))
+                                                laserPoints = points.toList()
                                             }
                                         }
 
-                                        GestureMode.ERASE -> {
-                                            if (isInsidePage(pagePoint)) eraseMove(pagePoint)
-                                        }
+                                        GestureMode.ERASE -> eraseMove(pagePoint, targetIndex)
 
                                         GestureMode.LASSO -> {
-                                            if (isInsidePage(pagePoint)) {
-                                                val last = lassoPoints.lastOrNull()
-                                                if (last == null ||
-                                                    hypot(pagePoint.x - last.x, pagePoint.y - last.y) >= 2f
-                                                ) {
-                                                    lassoPoints.add(Pt(pagePoint.x, pagePoint.y, 0.5f))
-                                                    lassoPreview = lassoPoints.toList()
-                                                }
+                                            val last = lassoPoints.lastOrNull()
+                                            if (last == null ||
+                                                hypot(pagePoint.x - last.x, pagePoint.y - last.y) >= 2f
+                                            ) {
+                                                lassoPoints.add(Pt(pagePoint.x, pagePoint.y, 0.5f))
+                                                lassoPreview = lassoPoints.toList()
                                             }
                                         }
 
@@ -456,6 +623,14 @@ fun DrawingCanvas(
                                             }
                                         }
 
+                                        GestureMode.TEXT_RESIZE -> {
+                                            val id = resizeTextId
+                                            if (id != null && transform.scale > 0f) {
+                                                val pageX = (change.position.x - pageOriginFor(targetIndex).x) / transform.scale
+                                                textResize(id, resizeStartWidth + (pageX - resizeStartX))
+                                            }
+                                        }
+
                                         GestureMode.TEXT -> {
                                             if ((change.position - down.position).getDistance() > touchSlop) {
                                                 moved = true
@@ -467,38 +642,43 @@ fun DrawingCanvas(
                                     change.consume()
                                 }
                             }
-                            if (event.changes.none { it.pressed }) break
+                            val stylusStillDown = !ignoreFingers ||
+                                event.changes.any { it.pressed && it.type == PointerType.Stylus }
+                            if (event.changes.none { it.pressed } || !stylusStillDown) break
                         }
 
                         if (!transformMode) {
                             when (mode) {
-                                GestureMode.DRAW -> makeStroke()?.let(commitStroke)
+                                GestureMode.DRAW -> makeStroke()?.let { commitStroke(it, targetIndex) }
                                 GestureMode.SHAPE -> {
                                     if (points.size >= 2) {
                                         val first = points.first()
                                         val last = points.last()
                                         if (hypot(last.x - first.x, last.y - first.y) >= 5f) {
-                                            makeStroke()?.let(commitStroke)
+                                            makeStroke()?.let { commitStroke(it, targetIndex) }
                                         }
                                     }
                                 }
 
                                 GestureMode.ERASE -> if (eraseActive) eraseEnd()
                                 GestureMode.MOVE -> if (selectionMoveActive) selectionMoveEnd()
+                                GestureMode.TEXT_RESIZE -> if (textResizeActive) textResizeEnd()
 
                                 GestureMode.LASSO -> {
                                     if (lassoPoints.size >= 3) {
-                                        val (strokeIds, textIds) = selectInsidePolygon(currentPage, lassoPoints)
-                                        lassoSelected(strokeIds, textIds)
+                                        val (strokeIds, textIds) = selectInsidePolygon(targetPage, lassoPoints)
+                                        lassoSelected(targetIndex, strokeIds, textIds)
+                                    } else {
+                                        lassoSelected(targetIndex, emptySet(), emptySet())
                                     }
                                 }
 
                                 GestureMode.TEXT -> {
-                                    if (!moved && isInsidePage(downPage)) {
-                                        val hit = currentPage.texts.lastOrNull {
+                                    if (!moved) {
+                                        val hit = targetPage.texts.lastOrNull {
                                             it.hitTest(downPage.x, downPage.y, 8f)
                                         }
-                                        if (hit != null) editText(hit) else addText(downPage)
+                                        if (hit != null) editText(hit) else addText(downPage, targetIndex)
                                     }
                                 }
 
@@ -517,37 +697,79 @@ fun DrawingCanvas(
 
             val transform = currentTransform()
             if (transform.scale > 0f) {
+                val leftOrigin = pageOriginFor(0)
                 drawPageBackground(
                     background = page.background,
                     scale = transform.scale,
-                    origin = transform.origin,
+                    origin = leftOrigin,
                     left = 0f,
                     top = 0f,
                     right = size.width,
                     bottom = size.height,
                 )
-                drawPageContent(
-                    page = page,
-                    scale = transform.scale,
-                    origin = transform.origin,
-                    selectedStrokeIds = selectedStrokeIds,
-                    selectedTextIds = selectedTextIds,
-                    drawSelection = true,
-                    drawPaper = false,
-                    drawBackground = false,
-                    clip = false,
-                )
-
-                previewStroke?.let { stroke ->
-                    drawStrokeBody(stroke, transform.scale, transform.origin)
+                if (secondPage != null) {
+                    val rightOrigin = pageOriginFor(1)
+                    drawPageBackground(
+                        background = secondPage.background,
+                        scale = transform.scale,
+                        origin = rightOrigin,
+                        left = rightOrigin.x,
+                        top = rightOrigin.y,
+                        right = rightOrigin.x + PAGE_WIDTH * transform.scale,
+                        bottom = rightOrigin.y + PAGE_HEIGHT * transform.scale,
+                    )
+                    drawLine(
+                        color = Color(0xFF94A3B8).copy(alpha = 0.35f),
+                        start = Offset(rightOrigin.x, rightOrigin.y),
+                        end = Offset(rightOrigin.x, rightOrigin.y + PAGE_HEIGHT * transform.scale),
+                        strokeWidth = 1.5f,
+                    )
                 }
 
-                drawLaserTrail(laserPoints, transform)
-                drawLassoPreview(lassoPreview, transform)
+                val pages = if (secondPage != null) listOf(page, secondPage) else listOf(page)
+                pages.forEachIndexed { index, item ->
+                    drawPageContent(
+                        page = item,
+                        scale = transform.scale,
+                        origin = pageOriginFor(index),
+                        selectedStrokeIds = selectedStrokeIds,
+                        selectedTextIds = selectedTextIds,
+                        drawSelection = true,
+                        drawPaper = false,
+                        drawBackground = false,
+                        clip = false,
+                    )
+                }
+
+                if (tool == ToolType.TEXT) {
+                    pages.forEachIndexed { index, item ->
+                        val pageOrigin = pageOriginFor(index)
+                        item.texts.forEach { text -> drawTextFrame(text, transform.scale, pageOrigin) }
+                    }
+                }
+
+                val gestureTransform = CanvasTransform(
+                    scale = transform.scale,
+                    origin = pageOriginFor(gesturePage),
+                )
+                previewStroke?.let { stroke ->
+                    drawStrokeBody(stroke, gestureTransform.scale, gestureTransform.origin)
+                }
+
+                drawLaserTrail(laserPoints, gestureTransform)
+                drawLassoPreview(lassoPreview, gestureTransform)
+
+                if (rulerEnabled) {
+                    drawRulerGuide(
+                        pivot = rulerPivot(),
+                        angleDegrees = rulerAngle,
+                        color = rulerColor,
+                    )
+                }
             }
         }
 
-        if (useInk && inkBrush != null && inkScale > 0f) {
+        if (inkBrush != null && effectiveInk && inkScale > 0f) {
             InProgressStrokes(
                 defaultBrush = inkBrush,
                 onStrokesFinished = { strokes ->
@@ -557,11 +779,57 @@ fun DrawingCanvas(
                             color = color,
                             width = width,
                             scale = inkScale,
-                            origin = inkTransform.origin,
-                        )?.let { converted -> commitStroke(converted) }
+                            origin = inkOrigin[0],
+                        )?.let { converted -> commitStroke(converted, inkTargetPage[0]) }
                     }
                 },
             )
+        }
+
+        if (rulerEnabled) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .windowInsetsPadding(
+                        WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal),
+                    )
+                    .offset {
+                        val radians = rulerAngle * PI.toFloat() / 180f
+                        val radius = (min(canvasSize.width, canvasSize.height) / 2f - 30.dp.toPx())
+                            .coerceAtLeast(0f)
+                        IntOffset(
+                            x = (cos(radians) * radius).roundToInt(),
+                            y = (
+                                canvasSize.height * rulerFraction - canvasSize.height / 2f +
+                                    sin(radians) * radius
+                                ).roundToInt(),
+                        )
+                    }
+                    .size(44.dp)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            if (canvasSize.height > 0) {
+                                rulerFraction = (rulerFraction + dragAmount.y / canvasSize.height)
+                                    .coerceIn(0.08f, 0.92f)
+                            }
+                            rulerAngle = (rulerAngle + dragAmount.x * 0.4f).coerceIn(-85f, 85f)
+                        }
+                    },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                tonalElevation = 0.dp,
+                shadowElevation = 6.dp,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.Straighten,
+                        contentDescription = "Drag ruler; slide sideways to rotate",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
 
         Column(
@@ -627,6 +895,12 @@ fun DrawingCanvas(
                             description = "Page background",
                             onClick = onShowPageBackground,
                         )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.Straighten,
+                            description = "Ruler",
+                            active = rulerEnabled,
+                            onClick = { rulerEnabled = !rulerEnabled },
+                        )
                     }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -666,6 +940,12 @@ fun DrawingCanvas(
                             description = "Page background",
                             onClick = onShowPageBackground,
                         )
+                        ZoomControlButton(
+                            icon = Icons.Outlined.Straighten,
+                            description = "Ruler",
+                            active = rulerEnabled,
+                            onClick = { rulerEnabled = !rulerEnabled },
+                        )
                     }
                 }
             }
@@ -686,7 +966,7 @@ fun DrawingCanvas(
             ) {
                 Text(
                     text = if (tool == ToolType.TEXT) {
-                        "Tap the page to add a text box"
+                        "Tap the page to add a text box · drag its corner to resize"
                     } else {
                         "Circle items to select · drag to move"
                     },
@@ -696,6 +976,52 @@ fun DrawingCanvas(
                 )
             }
         }
+    }
+}
+
+private const val SpreadGap = 28f
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRulerGuide(
+    pivot: Offset,
+    angleDegrees: Float,
+    color: Color,
+) {
+    val bandHeight = 34.dp.toPx()
+    val halfLength = hypot(size.width, size.height)
+    rotate(degrees = angleDegrees, pivot = pivot) {
+        val left = pivot.x - halfLength
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.88f),
+            topLeft = Offset(left, pivot.y),
+            size = Size(halfLength * 2f, bandHeight),
+            cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+        )
+        drawLine(
+            color = Color(0xFFCBD5E1),
+            start = Offset(left, pivot.y + bandHeight),
+            end = Offset(left + halfLength * 2f, pivot.y + bandHeight),
+            strokeWidth = 1f,
+        )
+        var x = left
+        val step = 26.dp.toPx()
+        var index = 0
+        while (x <= left + halfLength * 2f) {
+            val tick = if (index % 4 == 0) 16.dp.toPx() else 8.dp.toPx()
+            drawLine(
+                color = color.copy(alpha = 0.55f),
+                start = Offset(x, pivot.y),
+                end = Offset(x, pivot.y + tick),
+                strokeWidth = 1f,
+            )
+            x += step
+            index++
+        }
+        drawLine(
+            color = color,
+            start = Offset(left, pivot.y),
+            end = Offset(left + halfLength * 2f, pivot.y),
+            strokeWidth = 2.dp.toPx(),
+        )
     }
 }
 
@@ -786,12 +1112,17 @@ private fun ZoomControlButton(
     icon: ImageVector,
     description: String,
     onClick: () -> Unit,
+    active: Boolean = false,
 ) {
     IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
         Icon(
             icon,
             contentDescription = description,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (active) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             modifier = Modifier.size(18.dp),
         )
     }

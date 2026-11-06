@@ -7,6 +7,7 @@ import com.notecraft.model.PageBackground
 import com.notecraft.model.Pt
 import com.notecraft.model.ShapeType
 import com.notecraft.model.Stroke
+import com.notecraft.model.TextAlignment
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.model.blankPage
@@ -73,6 +74,7 @@ class NoteRepository(context: Context) {
     private fun Page.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("background", background.name)
+        if (bookmarked) put("bookmarked", true)
         put("strokes", JSONArray().apply { strokes.forEach { put(it.toJson()) } })
         put("texts", JSONArray().apply { texts.forEach { put(it.toJson()) } })
     }
@@ -102,6 +104,8 @@ class NoteRepository(context: Context) {
         put("text", text)
         put("color", color)
         put("fontSize", fontSize.toDouble())
+        if (width > 0f) put("width", width.toDouble())
+        if (alignment != TextAlignment.LEFT) put("alignment", alignment.name)
     }
 
     private fun parseNote(json: JSONObject): Note {
@@ -148,6 +152,7 @@ class NoteRepository(context: Context) {
             background = enumValueOrDefault(json.optString("background"), PageBackground.BLANK),
             strokes = strokes,
             texts = texts,
+            bookmarked = json.optBoolean("bookmarked", false),
         )
     }
 
@@ -187,6 +192,8 @@ class NoteRepository(context: Context) {
         text = json.optString("text"),
         color = json.optLong("color", 0xFF23222BL),
         fontSize = json.optDouble("fontSize", 34.0).toFloat(),
+        width = json.optDouble("width", 0.0).toFloat(),
+        alignment = enumValueOrDefault(json.optString("alignment"), TextAlignment.LEFT),
     )
 
     /**

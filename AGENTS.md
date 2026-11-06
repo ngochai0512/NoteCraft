@@ -117,16 +117,19 @@ MainActivity
 - `PrimaryTools`, `SecondaryTools`, and `PersistentTools` drive the editor UI. The laser is
   transient and must not be persisted; eraser strokes are not stored.
 - Notes are JSON files at `filesDir/notes/<note-id>.json`, format `version = 1`. Pages contain
-  strokes and text items; a note may also store an optional `coverTone` name. The repository writes
-  via a temporary file and atomic rename under `Dispatchers.IO` with a `Mutex`.
+  strokes and text items; a page may store `bookmarked`, and a note may also store an optional
+  `coverTone` name. Text items may store `width` and `alignment`; missing values mean a legacy
+  auto-width, left-aligned box. The repository writes via a temporary file and atomic rename under
+  `Dispatchers.IO` with a `Mutex`.
 - Saving is debounced (550 ms) and flushed when the editor closes or the app reaches `ON_STOP`.
   Any new user-visible mutation must end in `syncLibrary` + `scheduleSave`, or the existing
   `commitPages`/`applyPages` path.
 - Keep parsing tolerant and backward compatible: legacy `PEN` maps to `BALL_PEN`, unknown tools fall
   back to `BALL_PEN`, and malformed items are skipped instead of failing the whole note.
 - Tool preferences (per-tool color/width) live in `SharedPreferences` `notecraft_tool_prefs`.
-- App preferences (theme, default tool, default paper for new pages, autosave indicator) live in
-  `SharedPreferences` `notecraft_settings`. Palm rejection is intentionally a placeholder.
+  Recently used inks (`recent_colors`) and the eraser mode (`eraser_mode`) live there too.
+- App preferences (theme, default tool, default paper for new pages, autosave indicator, stylus-only
+  mode) live in `SharedPreferences` `notecraft_settings`.
 - Do not add network access, cloud sync, accounts, or a database without explicit approval.
 
 ## 6. Editor rendering and Jetpack Ink
@@ -153,6 +156,12 @@ Key rules:
   both conversion and brush sizing together.
 - If Ink brush initialization fails, the app falls back to the custom drawing path. Keep that
   fallback working.
+- Ruler mode and stylus-only mode intentionally use the custom path (snapped points and pointer
+  types must be controlled before authoring). Do not route them through Ink without solving
+  snapping and finger filtering first.
+- `secondPage` on `DrawingCanvas` enables the tablet-landscape two-page spread. The left page is
+  the ViewModel's `pageIndex`; the right page is `pageIndex + 1`. Gestures pass a target page index
+  to the ViewModel, so both pages are editable without changing the current page mid-gesture.
 - Pencil, shapes, tape, laser, text, and lasso remain custom. Do not route them through Ink.
 - Gesture handoff is deliberate: one finger draws (or erases/selects), two fingers zoom/pan. While
   Ink is active, the custom gesture loop waits without consuming single-pointer input, and a
@@ -186,6 +195,7 @@ Key rules:
   - tablet: `smallestScreenWidthDp >= 600`
   - compact height: `screenHeightDp < 480`
   - wide tool ribbon: `screenWidthDp >= 600`
+  - two-page spread: tablet + landscape
 - Landscape editor uses a compact icon-only ribbon (max 720 dp when wide) and a horizontal zoom
   dock in short landscape. The page drawer changes column count for tablets/landscape. Preserve
   these behaviors when touching the toolbar or drawer.
@@ -207,12 +217,22 @@ Key rules:
 - Ink tools use pressure. Custom tools read the pressure captured on `Pt`.
 - Laser is a fading transient trail and is never saved.
 - Lasso supports select, move, duplicate, and delete. Move by dragging inside the selection bounds.
-- Text tool: tap empty paper to add text; tap existing text to edit it; the eraser can remove text.
-- The eraser removes only the touched portion of a stroke, splitting the remainder into pieces
-  (shapes and text are removed whole). Keep the `beginErase`/`endErase` undo baseline intact.
-- Page background changes are undoable.
+- Text tool: tap empty paper to add text; tap existing text to edit it; drag the bottom-right box
+  handle to resize its wrapping width. Text alignment applies to new and edited text.
+- The eraser has Partial and Object modes. Partial removes only the touched portion of a stroke and
+  splits the remainder into pieces; Object removes whole strokes. Shapes and text are removed whole
+  in either mode. Keep the `beginErase`/`endErase` undo baseline intact.
+- Recently used inks are shown above the palette in each tool dropdown and persist in
+  `notecraft_tool_prefs`.
+- The ruler toggle lives in the canvas zoom dock. Strokes that start near the ruler edge snap to a
+  straight line; the handle drags the ruler and slides sideways to rotate it.
+- Stylus-only mode ignores finger drawing (and palm touches while a stylus is down) but still allows
+  two-finger pan/zoom. It uses the custom renderer, not Ink.
+- Page backgrounds are undoable.
 - Notebook covers can be automatic (derived from the note id) or one of the named tones; persist
   the choice through `Note.coverTone`.
+- Page bookmarks persist through `Page.bookmarked` and are toggled in the page drawer or editor
+  menu. Drag-and-drop reordering in the drawer uses `movePageTo`.
 - PDF export uses the system document picker and rasterizes pages at 150 dpi. Do not change the
   rendering path without checking paper, templates, text, and exported page orientation.
 - Do not change tool ordering, default widths/colors, or gesture semantics without a clear design
@@ -242,8 +262,13 @@ Before reporting a task complete:
    - drawing: fountain, ball, brush, pencil, marker, shapes, tape, laser, text, lasso
    - Ink wet stroke → dry NoteCraft stroke handoff
    - zoom in/out, pan, and drawing alignment at 100% and zoomed
-   - partial eraser across a stroke, selection move/duplicate/delete, undo/redo
-   - page add/duplicate/delete/reorder and every background template
+   - partial and object eraser across a stroke, selection move/duplicate/delete, undo/redo
+   - page add/duplicate/delete/reorder, bookmark a page, every background template
+   - text wrapping, alignment, and corner resize
+   - recently used colors in a tool dropdown
+   - ruler straight-line drawing
+   - stylus-only finger rejection on a device with a stylus (if available)
+   - two-page spread and editing both pages on a tablet in landscape
    - cover-tone chooser and persistence after relaunch
    - settings: theme override, default tool, default paper, autosave indicator
    - PDF export of a single-page and multi-page notebook, then open the PDF
@@ -259,13 +284,17 @@ Before reporting a task complete:
 These are intentional or currently unimplemented. Do not "fix" them opportunistically without
 asking:
 
-- The eraser removes stroke portions, not individual pixels; shapes and text are removed whole.
-- Text does not auto-wrap; use line breaks.
+- The eraser removes stroke portions (Partial) or whole strokes (Object), not individual pixels;
+  shapes and text are removed whole.
+- Text boxes wrap at their stored width. Height is automatic and there is no vertical box
+  constraint.
 - Undo history is session-only.
 - Notes are local only: no sync, export, cloud backup, or sharing.
-- Page navigation is page-by-page with controls/drawer, not a continuous scroll canvas.
-- Bookmarks, media insertion, drag-and-drop page reordering, and collaboration are not implemented.
+- Page navigation is page-by-page with controls/drawer, not a continuous scroll canvas. Tablet
+  landscape uses a two-page spread.
+- Media insertion and collaboration are not implemented.
 - Dry strokes use NoteCraft's renderer, so wet Ink and dry strokes can differ slightly.
+- Ruler and stylus-only modes use NoteCraft's custom renderer instead of the Ink overlay.
 - Pencil, shapes, tape, laser, text, and lasso remain custom implementations.
 
 New features should be requested before being built. Prefer small, testable additions to the

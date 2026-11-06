@@ -228,15 +228,73 @@ fun polygonContains(polygon: List<Pt>, x: Float, y: Float): Boolean {
 }
 
 fun TextItem.approximateBounds(): Bounds {
-    val lines = text.split('\n')
+    val lines = estimatedTextLines()
     val maxChars = lines.maxOfOrNull { it.length } ?: 0
-    val width = maxChars * fontSize * 0.56f
+    val boxWidth = if (width > 0f) width else maxChars * fontSize * 0.56f
     val height = max(lines.size, 1) * fontSize * 1.28f
-    return Bounds(x, y, x + width, y + height)
+    return Bounds(x, y, x + boxWidth, y + height)
+}
+
+/**
+ * Approximate the visible lines of a text box without using Android text APIs. Wrapping uses an
+ * average glyph width, which is accurate enough for hit testing and selection bounds.
+ */
+fun TextItem.estimatedTextLines(): List<String> {
+    val explicitLines = text.split('\n')
+    if (width <= 0f) return explicitLines
+    val maxChars = (width / (fontSize * 0.52f)).toInt().coerceAtLeast(1)
+    return explicitLines.flatMap { line -> wrapLine(line, maxChars) }
+}
+
+private fun wrapLine(line: String, maxChars: Int): List<String> {
+    if (line.isEmpty()) return listOf("")
+    if (line.length <= maxChars) return listOf(line)
+    val result = mutableListOf<String>()
+    val current = StringBuilder()
+    line.split(' ').forEach { word ->
+        if (word.length > maxChars) {
+            if (current.isNotEmpty()) {
+                result.add(current.toString())
+                current.clear()
+            }
+            var start = 0
+            while (start < word.length) {
+                val end = min(start + maxChars, word.length)
+                result.add(word.substring(start, end))
+                start = end
+            }
+        } else {
+            val candidateLength = if (current.isEmpty()) word.length else current.length + 1 + word.length
+            if (candidateLength > maxChars) {
+                if (current.isNotEmpty()) result.add(current.toString())
+                current.clear()
+                current.append(word)
+            } else {
+                if (current.isNotEmpty()) current.append(' ')
+                current.append(word)
+            }
+        }
+    }
+    if (current.isNotEmpty()) result.add(current.toString())
+    return result.ifEmpty { listOf("") }
+}
+
+/** The resize handle sits at the bottom-right corner of the text box. */
+fun TextItem.resizeHandle(radius: Float = 22f): Bounds {
+    val bounds = approximateBounds()
+    return Bounds(
+        left = bounds.right - radius,
+        top = bounds.bottom - radius,
+        right = bounds.right + radius,
+        bottom = bounds.bottom + radius,
+    )
 }
 
 fun TextItem.hitTest(x: Float, y: Float, extraRadius: Float): Boolean =
     approximateBounds().expand(extraRadius).contains(x, y)
+
+fun TextItem.hitHandle(x: Float, y: Float, tolerance: Float): Boolean =
+    resizeHandle(tolerance).contains(x, y)
 
 fun selectionBounds(
     page: Page,

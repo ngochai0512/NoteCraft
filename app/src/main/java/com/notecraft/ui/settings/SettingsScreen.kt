@@ -176,12 +176,10 @@ fun SettingsScreen(viewModel: NoteCraftViewModel) {
                 SettingsSection("Input") {
                     SettingSwitchRow(
                         icon = Icons.Outlined.Gesture,
-                        title = "Palm rejection",
-                        description = "Ignore accidental finger touches while writing with a stylus.",
-                        checked = false,
-                        onCheckedChange = {},
-                        enabled = false,
-                        badge = "COMING SOON",
+                        title = "Stylus only",
+                        description = "Ignore finger drawing and palm touches. Two fingers still pan and zoom.",
+                        checked = settings.stylusOnlyMode,
+                        onCheckedChange = viewModel::setStylusOnlyMode,
                     )
                 }
 

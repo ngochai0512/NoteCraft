@@ -9,13 +9,17 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.notecraft.data.NoteRepository
 import com.notecraft.model.AppSettings
+import com.notecraft.model.DefaultTextWidth
 import com.notecraft.model.DefaultToolColors
 import com.notecraft.model.DefaultToolWidths
+import com.notecraft.model.EraserMode
 import com.notecraft.model.Note
+import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.model.PageBackground
 import com.notecraft.model.ShapeType
 import com.notecraft.model.Stroke
+import com.notecraft.model.TextAlignment
 import com.notecraft.model.TextItem
 import com.notecraft.model.ThemeMode
 import com.notecraft.model.ToolType
@@ -29,6 +33,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private const val MaxRecentColors = 6
+
 data class LibraryState(
     val notes: List<Note> = emptyList(),
     val loading: Boolean = true,
@@ -41,8 +47,12 @@ data class EditorState(
     val toolColors: Map<ToolType, Long> = DefaultToolColors,
     val toolWidths: Map<ToolType, Float> = DefaultToolWidths,
     val shapeType: ShapeType = ShapeType.LINE,
+    val eraserMode: EraserMode = EraserMode.PARTIAL,
+    val textAlignment: TextAlignment = TextAlignment.LEFT,
+    val recentColors: List<Long> = emptyList(),
     val selectedStrokeIds: Set<String> = emptySet(),
     val selectedTextIds: Set<String> = emptySet(),
+    val selectionPageIndex: Int = 0,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
 ) {
@@ -64,6 +74,14 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     private var savedToolWidths: Map<ToolType, Float> = DefaultToolWidths.mapValues { (tool, default) ->
         preferences.getFloat("width_${tool.name}", default)
     }
+    private var savedEraserMode: EraserMode = runCatching {
+        EraserMode.valueOf(
+            preferences.getString("eraser_mode", EraserMode.PARTIAL.name)
+                ?: EraserMode.PARTIAL.name,
+        )
+    }.getOrDefault(EraserMode.PARTIAL)
+    private val savedRecentColors: MutableList<Long> = loadRecentColors()
+    private var textResizeBaseline: List<Page>? = null
 
     var settings by mutableStateOf(loadSettings())
         private set
@@ -107,11 +125,14 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         redoStack.clear()
         eraseBaseline = null
         selectionMoveBaseline = null
+        textResizeBaseline = null
         editor = EditorState(
             note = note,
             tool = settings.defaultTool,
             toolColors = savedToolColors,
             toolWidths = savedToolWidths,
+            eraserMode = savedEraserMode,
+            recentColors = savedRecentColors.toList(),
             canUndo = false,
             canRedo = false,
         )
@@ -126,6 +147,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         redoStack.clear()
         eraseBaseline = null
         selectionMoveBaseline = null
+        textResizeBaseline = null
     }
 
     fun deleteNote(noteId: String) {
@@ -215,6 +237,11 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         settingsPreferences.edit().putBoolean("show_autosave_indicator", show).apply()
     }
 
+    fun setStylusOnlyMode(enabled: Boolean) {
+        settings = settings.copy(stylusOnlyMode = enabled)
+        settingsPreferences.edit().putBoolean("stylus_only_mode", enabled).apply()
+    }
+
     fun setNoteCover(noteId: String, coverTone: String?) {
         val existing = library.notes.firstOrNull { it.id == noteId }
             ?: editor?.note?.takeIf { it.id == noteId }
@@ -248,7 +275,27 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             defaultTool = defaultTool,
             defaultPageBackground = defaultBackground,
             showAutosaveIndicator = settingsPreferences.getBoolean("show_autosave_indicator", true),
+            stylusOnlyMode = settingsPreferences.getBoolean("stylus_only_mode", false),
         )
+    }
+
+    private fun loadRecentColors(): MutableList<Long> = preferences
+        .getString("recent_colors", null)
+        ?.split(',')
+        ?.mapNotNull { raw -> raw.toLongOrNull() }
+        ?.distinct()
+        ?.take(MaxRecentColors)
+        ?.toMutableList()
+        ?: mutableListOf()
+
+    private fun rememberRecentColor(color: Long) {
+        savedRecentColors.remove(color)
+        savedRecentColors.add(0, color)
+        while (savedRecentColors.size > MaxRecentColors) savedRecentColors.removeAt(savedRecentColors.lastIndex)
+        preferences.edit()
+            .putString("recent_colors", savedRecentColors.joinToString(","))
+            .apply()
+        editor = editor?.copy(recentColors = savedRecentColors.toList())
     }
 
     // ---------------------------------------------------------------- editor state
@@ -268,6 +315,18 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         savedToolColors = updated
         preferences.edit().putLong("color_${current.tool.name}", color).apply()
         editor = current.copy(toolColors = updated)
+        rememberRecentColor(color)
+    }
+
+    fun setEraserMode(mode: EraserMode) {
+        val current = editor ?: return
+        savedEraserMode = mode
+        preferences.edit().putString("eraser_mode", mode.name).apply()
+        editor = current.copy(eraserMode = mode)
+    }
+
+    fun setTextAlignment(alignment: TextAlignment) {
+        editor = editor?.copy(textAlignment = alignment)
     }
 
     fun setToolWidth(width: Float) {
@@ -302,6 +361,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             pageIndex = target,
             selectedStrokeIds = emptySet(),
             selectedTextIds = emptySet(),
+            selectionPageIndex = target,
         )
     }
 
@@ -310,7 +370,12 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val insertAt = (current.pageIndex + 1).coerceIn(0, current.note.pages.size)
         val page = blankPage(settings.defaultPageBackground ?: current.page.background)
         commitPages { pages -> pages.toMutableList().also { it.add(insertAt, page) } }
-        editor = editor?.copy(pageIndex = insertAt, selectedStrokeIds = emptySet(), selectedTextIds = emptySet())
+        editor = editor?.copy(
+            pageIndex = insertAt,
+            selectionPageIndex = insertAt,
+            selectedStrokeIds = emptySet(),
+            selectedTextIds = emptySet(),
+        )
     }
 
     fun duplicatePage() {
@@ -318,7 +383,12 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val insertAt = (current.pageIndex + 1).coerceIn(0, current.note.pages.size)
         val page = current.page.duplicate()
         commitPages { pages -> pages.toMutableList().also { it.add(insertAt, page) } }
-        editor = editor?.copy(pageIndex = insertAt, selectedStrokeIds = emptySet(), selectedTextIds = emptySet())
+        editor = editor?.copy(
+            pageIndex = insertAt,
+            selectionPageIndex = insertAt,
+            selectedStrokeIds = emptySet(),
+            selectedTextIds = emptySet(),
+        )
     }
 
     fun deletePage() {
@@ -330,8 +400,10 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
         commitPages { pages -> pages.toMutableList().also { it.removeAt(index) } }
         val newEditor = editor ?: return
+        val newIndex = index.coerceAtMost(newEditor.note.pages.lastIndex)
         editor = newEditor.copy(
-            pageIndex = index.coerceAtMost(newEditor.note.pages.lastIndex),
+            pageIndex = newIndex,
+            selectionPageIndex = newIndex,
             selectedStrokeIds = emptySet(),
             selectedTextIds = emptySet(),
         )
@@ -348,7 +420,47 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
                 it.add(target, page)
             }
         }
-        editor = editor?.copy(pageIndex = target)
+        editor = editor?.copy(pageIndex = target, selectionPageIndex = target)
+    }
+
+    /** Drag-and-drop reordering from the page drawer. */
+    fun movePageTo(from: Int, to: Int) {
+        val current = editor ?: return
+        if (from !in current.note.pages.indices) return
+        val target = to.coerceIn(0, current.note.pages.lastIndex)
+        if (from == target) return
+        commitPages { pages ->
+            pages.toMutableList().also {
+                val page = it.removeAt(from)
+                it.add(target, page)
+            }
+        }
+        val updated = editor ?: return
+        val currentIndex = current.pageIndex
+        val newIndex = when {
+            currentIndex == from -> target
+            from < currentIndex && target >= currentIndex -> currentIndex - 1
+            from > currentIndex && target <= currentIndex -> currentIndex + 1
+            else -> currentIndex
+        }.coerceIn(0, updated.note.pages.lastIndex)
+        val selectionIndex = when {
+            current.selectionPageIndex == from -> target
+            from < current.selectionPageIndex && target >= current.selectionPageIndex -> current.selectionPageIndex - 1
+            from > current.selectionPageIndex && target <= current.selectionPageIndex -> current.selectionPageIndex + 1
+            else -> current.selectionPageIndex
+        }.coerceIn(0, updated.note.pages.lastIndex)
+        editor = updated.copy(pageIndex = newIndex, selectionPageIndex = selectionIndex)
+    }
+
+    /** Star/unstar a page. Bookmarks live in the note JSON like the rest of the page. */
+    fun togglePageBookmark(index: Int? = null) {
+        val current = editor ?: return
+        val target = (index ?: current.pageIndex).coerceIn(0, current.note.pages.lastIndex)
+        commitPages { pages ->
+            pages.toMutableList().also {
+                it[target] = it[target].copy(bookmarked = !it[target].bookmarked)
+            }
+        }
     }
 
     fun clearPage() {
@@ -364,9 +476,9 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ---------------------------------------------------------------- drawing
 
-    fun addStroke(stroke: Stroke) {
+    fun addStroke(stroke: Stroke, pageIndexOverride: Int? = null) {
         val current = editor ?: return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val index = (pageIndexOverride ?: current.pageIndex).coerceIn(0, current.note.pages.lastIndex)
         commitPages { pages ->
             pages.toMutableList().also {
                 it[index] = it[index].copy(strokes = it[index].strokes + stroke)
@@ -378,16 +490,20 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         eraseBaseline = editor?.note?.pages
     }
 
-    fun eraseAt(x: Float, y: Float) {
+    fun eraseAt(x: Float, y: Float, pageIndexOverride: Int? = null) {
         val current = editor ?: return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val index = (pageIndexOverride ?: current.pageIndex).coerceIn(0, current.note.pages.lastIndex)
         val page = current.note.pages[index]
         val radius = (current.toolWidths[ToolType.ERASER] ?: 26f) / 2f
-        val remainingStrokes = page.strokes.flatMap { stroke ->
-            if (stroke.hitTest(x, y, radius)) {
-                stroke.partialErase(x, y, radius)
-            } else {
-                listOf(stroke)
+        val remainingStrokes = if (current.eraserMode == EraserMode.OBJECT) {
+            page.strokes.filterNot { stroke -> stroke.hitTest(x, y, radius) }
+        } else {
+            page.strokes.flatMap { stroke ->
+                if (stroke.hitTest(x, y, radius)) {
+                    stroke.partialErase(x, y, radius)
+                } else {
+                    listOf(stroke)
+                }
             }
         }
         val textsToRemove = page.texts.filter { it.hitTest(x, y, radius) }.map { it.id }.toSet()
@@ -408,11 +524,28 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun addText(x: Float, y: Float, text: String, color: Long, fontSize: Float) {
+    fun addText(
+        x: Float,
+        y: Float,
+        text: String,
+        color: Long,
+        fontSize: Float,
+        alignment: TextAlignment = TextAlignment.LEFT,
+        pageIndexOverride: Int? = null,
+    ) {
         if (text.isBlank()) return
         val current = editor ?: return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
-        val item = TextItem(id = newId(), x = x, y = y, text = text, color = color, fontSize = fontSize)
+        val index = (pageIndexOverride ?: current.pageIndex).coerceIn(0, current.note.pages.lastIndex)
+        val item = TextItem(
+            id = newId(),
+            x = x,
+            y = y,
+            text = text,
+            color = color,
+            fontSize = fontSize,
+            width = DefaultTextWidth,
+            alignment = alignment,
+        )
         commitPages { pages ->
             pages.toMutableList().also {
                 it[index] = it[index].copy(texts = it[index].texts + item)
@@ -420,12 +553,12 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun updateText(textId: String, text: String) {
+    fun updateText(textId: String, text: String, alignment: TextAlignment? = null) {
         val current = editor ?: return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val index = current.note.pages.indexOfFirst { page -> page.texts.any { it.id == textId } }
+        if (index < 0) return
         val page = current.note.pages[index]
         if (text.isBlank()) {
-            if (page.texts.none { it.id == textId }) return
             commitPages { pages ->
                 pages.toMutableList().also {
                     it[index] = it[index].copy(texts = it[index].texts.filterNot { item -> item.id == textId })
@@ -438,7 +571,14 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             pages.toMutableList().also {
                 it[index] = it[index].copy(
                     texts = it[index].texts.map { item ->
-                        if (item.id == textId) item.copy(text = text) else item
+                        if (item.id == textId) {
+                            item.copy(
+                                text = text,
+                                alignment = alignment ?: item.alignment,
+                            )
+                        } else {
+                            item
+                        }
                     },
                 )
             }
@@ -447,7 +587,8 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun deleteText(textId: String) {
         val current = editor ?: return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val index = current.note.pages.indexOfFirst { page -> page.texts.any { it.id == textId } }
+        if (index < 0) return
         commitPages { pages ->
             pages.toMutableList().also {
                 it[index] = it[index].copy(texts = it[index].texts.filterNot { item -> item.id == textId })
@@ -455,13 +596,41 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun beginTextResize() {
+        textResizeBaseline = editor?.note?.pages
+    }
+
+    fun resizeText(textId: String, width: Float) {
+        val current = editor ?: return
+        val index = current.note.pages.indexOfFirst { page -> page.texts.any { it.id == textId } }
+        if (index < 0) return
+        val page = current.note.pages[index]
+        val updated = page.copy(
+            texts = page.texts.map { item ->
+                if (item.id == textId) item.copy(width = width.coerceIn(80f, PAGE_WIDTH * 2f)) else item
+            },
+        )
+        replacePageWithoutHistory(index, updated)
+    }
+
+    fun endTextResize() {
+        val baseline = textResizeBaseline
+        textResizeBaseline = null
+        if (baseline != null && editor?.note?.pages !== baseline) {
+            pushUndo(baseline)
+            syncHistoryFlags()
+        }
+    }
+
     // ---------------------------------------------------------------- selection
 
-    fun setSelection(strokeIds: Set<String>, textIds: Set<String>) {
+    fun setSelection(pageIndex: Int, strokeIds: Set<String>, textIds: Set<String>) {
         val current = editor ?: return
+        val target = pageIndex.coerceIn(0, current.note.pages.lastIndex)
         editor = current.copy(
             selectedStrokeIds = strokeIds,
             selectedTextIds = textIds,
+            selectionPageIndex = target,
             tool = ToolType.LASSO,
         )
     }
@@ -475,7 +644,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteSelection() {
         val current = editor ?: return
         if (!current.hasSelection) return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val index = current.selectionPageIndex.coerceIn(0, current.note.pages.lastIndex)
         val strokeIds = current.selectedStrokeIds
         val textIds = current.selectedTextIds
         commitPages { pages ->
@@ -493,7 +662,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun duplicateSelection() {
         val current = editor ?: return
         if (!current.hasSelection) return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val index = current.selectionPageIndex.coerceIn(0, current.note.pages.lastIndex)
         val page = current.note.pages[index]
         val offset = 28f
         val newStrokes = page.strokes
@@ -532,7 +701,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val current = editor ?: return
         if (!current.hasSelection) return
         if (dx == 0f && dy == 0f) return
-        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val index = current.selectionPageIndex.coerceIn(0, current.note.pages.lastIndex)
         val page = current.note.pages[index]
         val strokeIds = current.selectedStrokeIds
         val textIds = current.selectedTextIds

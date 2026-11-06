@@ -3,6 +3,7 @@ package com.notecraft.util
 import com.notecraft.model.Pt
 import com.notecraft.model.ShapeType
 import com.notecraft.model.Stroke
+import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -68,5 +69,41 @@ class GeometryTest {
             shapeType = ShapeType.LINE,
         )
         assertTrue(shape.partialErase(50f, 100f, extraRadius = 5f).isEmpty())
+    }
+
+    @Test
+    fun textBoxWrapsInsideItsWidthAndReportsResizeHandle() {
+        val text = TextItem(
+            id = "text",
+            x = 100f,
+            y = 200f,
+            text = "A long sentence that should wrap onto several lines inside the fixed text box width.",
+            color = 0xFF000000,
+            fontSize = 30f,
+            width = 240f,
+        )
+
+        val bounds = text.approximateBounds()
+        assertEquals(240f, bounds.width, 0.001f)
+        assertTrue(text.estimatedTextLines().size > 1)
+
+        val handleCenterX = bounds.right
+        val handleCenterY = bounds.bottom
+        assertTrue(text.hitHandle(handleCenterX, handleCenterY, tolerance = 20f))
+        assertTrue(!text.hitHandle(bounds.left, bounds.top, tolerance = 4f))
+    }
+
+    @Test
+    fun legacyTextWithoutWidthKeepsExplicitLines() {
+        val text = TextItem(
+            id = "legacy",
+            x = 0f,
+            y = 0f,
+            text = "one\ntwo",
+            color = 0xFF000000,
+        )
+
+        assertEquals(2f, text.approximateBounds().height / (text.fontSize * 1.28f), 0.001f)
+        assertEquals(listOf("one", "two"), text.estimatedTextLines())
     }
 }

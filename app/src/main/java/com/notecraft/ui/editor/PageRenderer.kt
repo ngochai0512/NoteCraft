@@ -2,6 +2,9 @@ package com.notecraft.ui.editor
 
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -23,6 +26,7 @@ import com.notecraft.model.Page
 import com.notecraft.model.PageBackground
 import com.notecraft.model.ShapeType
 import com.notecraft.model.Stroke as InkStroke
+import com.notecraft.model.TextAlignment
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.util.Bounds
@@ -872,24 +876,61 @@ private fun smoothPath(points: List<Offset>): Path {
 }
 
 fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
-    if (item.text.isBlank()) return
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    if (item.text.isBlank() || scale <= 0f) return
+    val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = item.color.toInt()
         textSize = item.fontSize * scale
         typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     }
-    val lines = item.text.split('\n')
-    val lineHeight = item.fontSize * 1.28f * scale
-    val baselineOffset = item.fontSize * 1.02f * scale
-    val canvas = drawContext.canvas.nativeCanvas
-    lines.forEachIndexed { index, line ->
-        canvas.drawText(
-            line,
-            origin.x + item.x * scale,
-            origin.y + item.y * scale + baselineOffset + index * lineHeight,
-            paint,
-        )
+    val availableWidth = if (item.width > 0f) {
+        (item.width * scale).toInt().coerceAtLeast(1)
+    } else {
+        // Legacy text boxes keep their free-flowing width and only break on explicit newlines.
+        val longestLine = item.text.split('\n').maxOfOrNull { line -> paint.measureText(line) } ?: 0f
+        ceil(longestLine).toInt().coerceAtLeast(1)
     }
+    val alignment = when (item.alignment) {
+        TextAlignment.LEFT -> Layout.Alignment.ALIGN_NORMAL
+        TextAlignment.CENTER -> Layout.Alignment.ALIGN_CENTER
+        TextAlignment.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+    }
+    val layout = StaticLayout.Builder
+        .obtain(item.text, 0, item.text.length, paint, availableWidth)
+        .setAlignment(alignment)
+        .setIncludePad(false)
+        .setLineSpacing(0f, 1f)
+        .build()
+    val canvas = drawContext.canvas.nativeCanvas
+    canvas.save()
+    canvas.translate(origin.x + item.x * scale, origin.y + item.y * scale)
+    layout.draw(canvas)
+    canvas.restore()
+}
+
+/** Dashed box and bottom-right resize handle shown while the text tool is active. */
+fun DrawScope.drawTextFrame(item: TextItem, scale: Float, origin: Offset) {
+    if (scale <= 0f) return
+    val bounds = item.approximateBounds()
+    val left = origin.x + bounds.left * scale
+    val top = origin.y + bounds.top * scale
+    val right = origin.x + bounds.right * scale
+    val bottom = origin.y + bounds.bottom * scale
+    val effect = PathEffect.dashPathEffect(floatArrayOf(7f, 6f), 0f)
+    drawRect(
+        color = SelectionColor.copy(alpha = 0.65f),
+        topLeft = Offset(left, top),
+        size = Size(right - left, bottom - top),
+        style = DrawStroke(width = 1.4f, pathEffect = effect),
+    )
+    val handle = Offset(right, bottom)
+    drawCircle(color = Color.White, radius = 8f, center = handle)
+    drawCircle(
+        color = SelectionColor,
+        radius = 8f,
+        center = handle,
+        style = DrawStroke(width = 2f),
+    )
+    drawCircle(color = SelectionColor, radius = 3f, center = handle)
 }
 
 fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {    val left = origin.x + bounds.left * scale

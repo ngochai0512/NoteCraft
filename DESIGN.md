@@ -89,12 +89,12 @@
 * **Tool Order**:
   1. Pen Tool (Fountain, Ballpoint, Brush)
   2. Highlighter (Semi-transparent overlay preview)
-  3. Precision Eraser (Stroke vs Area toggle)
+  3. Precision Eraser (Partial vs Object toggle)
   4. Lasso Selection Tool
   5. Stickers / Elements Picker
-  6. Text Box (`T`)
+  6. Text Box (`T`) with wrapping, alignment, and a corner resize handle
   7. Media / Camera Insert
-* **Contextual Sub-bar**: Color dots (3 quick-swap presets) + Stroke width selectors (0.3mm, 0.7mm, 1.5mm) + Undo/Redo controls.
+* **Contextual Sub-bar**: Recently used inks + color dots (3 quick-swap presets) + Stroke width selectors (0.3mm, 0.7mm, 1.5mm) + Undo/Redo controls.
 
 ### 2. Digital Notebook Card (Documents Home)
 * Realistic ratio (`3:4`) notebook preview with spine binding, leather/matte finish, ribbon bookmark, label badge, and edited timestamp.
@@ -116,19 +116,23 @@
 * The paper fills the entire editor viewport edge-to-edge; there is no desk backdrop, page border, or drop shadow.
 * Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
 * Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
+* A straight-edge ruler can be toggled on from the zoom controls. Its handle moves and rotates the guide, and strokes that start near the edge snap to a perfectly straight line.
+* Two-page spread is enabled on tablets in landscape. Both pages are editable; the left page remains the current page for page-level actions.
 * Paper is allowed to extend behind display cutouts and system bars, while toolbars, navigation, zoom controls, and sheets inset themselves using `WindowInsets.safeDrawing` / `WindowInsets.displayCutout`.
 * The eraser removes only the touched portion of a stroke; shapes and text are removed whole, and each erase gesture is one undo step.
 
 ### 4. Page Thumbnail & Bookmarks
 * 2-column or 3-column micro-page grid.
-* Quick add page before/after, bookmark star toggle, and drag-and-drop reordering indicator.
+* Quick add page before/after, bookmark star toggle on each thumbnail, and drag-and-drop reordering with a lift/shadow indicator.
+* The star uses Highlighter Amber for bookmarked pages and a muted outline otherwise.
 
 ### 5. Settings Screen
 * A dedicated full screen opened from the library or editor, never a dialog.
 * Rows use the same icon tile, title, description and trailing-control rhythm as the rest of the app.
 * Appearance: system, light or dark theme.
 * Editor: default tool, default paper for new pages, autosave indicator toggle.
-* Palm rejection, cloud backup, handwriting search and audio notes are marked **Coming soon** with an inline badge.
+* Input: stylus-only mode ignores finger drawing and palm touches while two-finger pan and zoom remain available.
+* Cloud backup, handwriting search and audio notes are marked **Coming soon** with an inline badge.
 * Storage and offline status are described in a read-only section.
 
 ---

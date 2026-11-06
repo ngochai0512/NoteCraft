@@ -96,7 +96,9 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.notecraft.model.PrimaryTools
 import com.notecraft.model.SecondaryTools
+import com.notecraft.model.EraserMode
 import com.notecraft.model.ShapeType
+import com.notecraft.model.TextAlignment
 import com.notecraft.model.ToolType
 import com.notecraft.ui.EditorState
 import com.notecraft.ui.theme.InkPalette
@@ -132,6 +134,8 @@ fun EditorToolPanel(
     onColorSelected: (Long) -> Unit,
     onWidthChange: (Float) -> Unit,
     onShapeSelected: (ShapeType) -> Unit,
+    onEraserModeSelected: (EraserMode) -> Unit,
+    onTextAlignmentSelected: (TextAlignment) -> Unit,
     onOpenColorPicker: () -> Unit,
     onDeleteSelection: () -> Unit,
     onDuplicateSelection: () -> Unit,
@@ -193,6 +197,8 @@ fun EditorToolPanel(
                             onColorSelected = onColorSelected,
                             onWidthChange = onWidthChange,
                             onShapeSelected = onShapeSelected,
+                            onEraserModeSelected = onEraserModeSelected,
+                            onTextAlignmentSelected = onTextAlignmentSelected,
                             onOpenColorPicker = onOpenColorPicker,
                             onClearPage = onClearPage,
                         )
@@ -498,12 +504,44 @@ private fun ToolOptions(
     onColorSelected: (Long) -> Unit,
     onWidthChange: (Float) -> Unit,
     onShapeSelected: (ShapeType) -> Unit,
+    onEraserModeSelected: (EraserMode) -> Unit,
+    onTextAlignmentSelected: (TextAlignment) -> Unit,
     onOpenColorPicker: () -> Unit,
     onClearPage: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (editor.tool == ToolType.ERASER) {
             Column {
+                Text(
+                    text = "Eraser type",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    EraserMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = editor.eraserMode == mode,
+                            onClick = { onEraserModeSelected(mode) },
+                            label = { Text(mode.label) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Text(
+                    text = if (editor.eraserMode == EraserMode.OBJECT) {
+                        "Touching a stroke removes the whole stroke."
+                    } else {
+                        "Touching a stroke removes only that portion."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Spacer(Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -558,6 +596,28 @@ private fun ToolOptions(
         }
 
         val customColor = editor.color !in InkPalette
+        if (editor.recentColors.isNotEmpty()) {
+            Text(
+                text = "RECENT",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                editor.recentColors.forEach { swatch ->
+                    ColorSwatch(
+                        color = swatch,
+                        selected = editor.color == swatch,
+                        onClick = { onColorSelected(swatch) },
+                    )
+                }
+            }
+        }
         if (compact) {
             Row(
                 modifier = Modifier
@@ -644,6 +704,32 @@ private fun ToolOptions(
                 color = editor.color,
                 width = editor.width,
                 maxWidth = range.endInclusive,
+            )
+        }
+
+        if (editor.tool == ToolType.TEXT) {
+            Text(
+                text = "ALIGNMENT",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextAlignment.entries.forEach { option ->
+                    FilterChip(
+                        selected = editor.textAlignment == option,
+                        onClick = { onTextAlignmentSelected(option) },
+                        label = { Text(option.label) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Text(
+                text = "Text wraps inside its box. Drag the box corner on the page to resize it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 

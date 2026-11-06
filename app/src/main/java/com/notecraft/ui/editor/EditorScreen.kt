@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,17 +40,20 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.automirrored.outlined.Redo
 import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,12 +79,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.notecraft.model.Note
 import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
@@ -93,12 +101,14 @@ import com.notecraft.ui.components.ConfirmDialog
 import com.notecraft.ui.components.CoverToneDialog
 import com.notecraft.ui.components.NoteThumbnail
 import com.notecraft.ui.components.TextEntryDialog
+import com.notecraft.ui.theme.HighlighterAmber
 import com.notecraft.ui.theme.MintGreen
 import com.notecraft.util.PdfExporter
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private sealed interface TextDialogTarget {
-    data class New(val point: Offset) : TextDialogTarget
+    data class New(val point: Offset, val pageIndex: Int) : TextDialogTarget
     data class Edit(val item: TextItem) : TextDialogTarget
 }
 
@@ -143,6 +153,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
     val compactHeight = configuration.screenHeightDp < 480
     val compactTools = compactHeight || isLandscape
     val wideTools = configuration.screenWidthDp >= 600
+    val spread = isTablet && isLandscape
+    val pageStep = if (spread) 2 else 1
 
     LaunchedEffect(editor.pageIndex) {
         expandedTool = null
@@ -283,6 +295,28 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 },
                             )
                             DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (editor.page.bookmarked) "Remove bookmark" else "Bookmark page",
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        if (editor.page.bookmarked) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                        contentDescription = null,
+                                        tint = if (editor.page.bookmarked) {
+                                            HighlighterAmber
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.togglePageBookmark()
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Add page") },
                                 leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null) },
                                 onClick = {
@@ -388,6 +422,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     onColorSelected = viewModel::setToolColor,
                     onWidthChange = viewModel::setToolWidth,
                     onShapeSelected = viewModel::setShapeType,
+                    onEraserModeSelected = viewModel::setEraserMode,
+                    onTextAlignmentSelected = viewModel::setTextAlignment,
                     onOpenColorPicker = {
                         expandedTool = null
                         showColorPicker = true
@@ -411,8 +447,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 PageNavigator(
                     pageIndex = editor.pageIndex,
                     pageCount = editor.note.pageCount,
-                    onPrevious = { viewModel.goToPage(editor.pageIndex - 1) },
-                    onNext = { viewModel.goToPage(editor.pageIndex + 1) },
+                    onPrevious = { viewModel.goToPage(editor.pageIndex - pageStep) },
+                    onNext = { viewModel.goToPage(editor.pageIndex + pageStep) },
                     modifier = Modifier.padding(
                         horizontal = if (isTablet) 16.dp else 12.dp,
                         vertical = 8.dp,
@@ -426,24 +462,35 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
             ) {
                 DrawingCanvas(
                     page = editor.page,
+                    secondPage = if (spread) editor.note.pages.getOrNull(editor.pageIndex + 1) else null,
+                    pageIndex = editor.pageIndex,
                     tool = editor.tool,
                     color = editor.color,
                     width = editor.width,
                     shapeType = editor.shapeType,
+                    stylusOnly = viewModel.settings.stylusOnlyMode,
                     selectedStrokeIds = editor.selectedStrokeIds,
                     selectedTextIds = editor.selectedTextIds,
-                    onStrokeCommitted = { stroke ->
-                        if (stroke.tool in PersistentTools) viewModel.addStroke(stroke)
+                    selectionPageIndex = editor.selectionPageIndex,
+                    onStrokeCommitted = { stroke, targetPage ->
+                        if (stroke.tool in PersistentTools) viewModel.addStroke(stroke, targetPage)
                     },
                     onEraseStart = viewModel::beginErase,
-                    onEraseMove = { point -> viewModel.eraseAt(point.x, point.y) },
+                    onEraseMove = { point, targetPage -> viewModel.eraseAt(point.x, point.y, targetPage) },
                     onEraseEnd = viewModel::endErase,
-                    onLassoSelected = viewModel::setSelection,
+                    onLassoSelected = { targetPage, strokes, texts ->
+                        viewModel.setSelection(targetPage, strokes, texts)
+                    },
                     onSelectionMoveStart = viewModel::beginSelectionMove,
                     onSelectionMove = { delta -> viewModel.moveSelection(delta.x, delta.y) },
                     onSelectionMoveEnd = viewModel::endSelectionMove,
-                    onAddText = { point -> textDialogTarget = TextDialogTarget.New(point) },
+                    onAddText = { point, targetPage ->
+                        textDialogTarget = TextDialogTarget.New(point, targetPage)
+                    },
                     onEditText = { item -> textDialogTarget = TextDialogTarget.Edit(item) },
+                    onTextResizeStart = viewModel::beginTextResize,
+                    onTextResize = { id, newWidth -> viewModel.resizeText(id, newWidth) },
+                    onTextResizeEnd = viewModel::endTextResize,
                     onShowPages = { showPageDrawer = true },
                     onShowPageBackground = { showBackgroundDialog = true },
                     modifier = Modifier.fillMaxSize(),
@@ -452,8 +499,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     PageNavigator(
                         pageIndex = editor.pageIndex,
                         pageCount = editor.note.pageCount,
-                        onPrevious = { viewModel.goToPage(editor.pageIndex - 1) },
-                        onNext = { viewModel.goToPage(editor.pageIndex + 1) },
+                        onPrevious = { viewModel.goToPage(editor.pageIndex - pageStep) },
+                        onNext = { viewModel.goToPage(editor.pageIndex + pageStep) },
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .windowInsetsPadding(
@@ -498,6 +545,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     viewModel.addPage()
                     showPageDrawer = false
                 },
+                onToggleBookmark = { index -> viewModel.togglePageBookmark(index) },
+                onReorder = { from, to -> viewModel.movePageTo(from, to) },
             )
         }
     }
@@ -559,10 +608,20 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 allowEmpty = false,
                 minLines = 2,
                 maxLines = 6,
-                supportingText = "Tap the text later with the Text tool to edit it.",
+                supportingText = "Text wraps in its box. Tap it later with the Text tool to edit or drag the corner to resize.",
+                alignment = editor.textAlignment,
+                onAlignmentChange = viewModel::setTextAlignment,
                 onDismiss = { textDialogTarget = null },
                 onConfirm = { text ->
-                    viewModel.addText(target.point.x, target.point.y, text, editor.color, editor.width)
+                    viewModel.addText(
+                        target.point.x,
+                        target.point.y,
+                        text,
+                        editor.color,
+                        editor.width,
+                        alignment = editor.textAlignment,
+                        pageIndexOverride = target.pageIndex,
+                    )
                     textDialogTarget = null
                 },
             )
@@ -576,10 +635,14 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 allowEmpty = false,
                 minLines = 2,
                 maxLines = 6,
-                supportingText = "Use the eraser to remove this text.",
+                supportingText = "Use the eraser to remove this text, or drag the box corner to resize it.",
+                alignment = target.item.alignment,
+                onAlignmentChange = { alignment ->
+                    textDialogTarget = TextDialogTarget.Edit(target.item.copy(alignment = alignment))
+                },
                 onDismiss = { textDialogTarget = null },
                 onConfirm = { text ->
-                    viewModel.updateText(target.item.id, text)
+                    viewModel.updateText(target.item.id, text, target.item.alignment)
                     textDialogTarget = null
                 },
             )
@@ -655,6 +718,8 @@ private fun PageDrawer(
     currentIndex: Int,
     onSelect: (Int) -> Unit,
     onAdd: () -> Unit,
+    onToggleBookmark: (Int) -> Unit,
+    onReorder: (Int, Int) -> Unit,
 ) {
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -665,6 +730,8 @@ private fun PageDrawer(
         else -> 3
     }
     val maxGridHeight = if (configuration.screenHeightDp < 480) 220.dp else 440.dp
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
 
     Column(
         modifier = Modifier
@@ -687,7 +754,13 @@ private fun PageDrawer(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Tap to open · long-press and drag to reorder",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(10.dp))
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val gap = 10.dp
             val cellWidth = (maxWidth - gap * (columns - 1).toFloat()) / columns.toFloat()
@@ -697,6 +770,9 @@ private fun PageDrawer(
                 tileHeight * rows.toFloat() + gap * (rows - 1).toFloat(),
                 maxGridHeight,
             )
+            val density = LocalDensity.current
+            val cellWidthPx = with(density) { cellWidth.toPx() }
+            val rowHeightPx = with(density) { (tileHeight + 12.dp).toPx() }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 modifier = Modifier
@@ -710,7 +786,35 @@ private fun PageDrawer(
                         page = page,
                         index = index,
                         current = index == currentIndex,
+                        dragging = draggingIndex == index,
+                        dragOffset = if (draggingIndex == index) dragOffset else Offset.Zero,
                         onClick = { onSelect(index) },
+                        onToggleBookmark = { onToggleBookmark(index) },
+                        onDragStart = {
+                            draggingIndex = index
+                            dragOffset = Offset.Zero
+                        },
+                        onDrag = { amount -> dragOffset += amount },
+                        onDragEnd = {
+                            val from = draggingIndex
+                            if (from != null) {
+                                val target = reorderTarget(
+                                    index = from,
+                                    dragOffset = dragOffset,
+                                    columns = columns,
+                                    cellWidthPx = cellWidthPx,
+                                    rowHeightPx = rowHeightPx,
+                                    lastIndex = pages.lastIndex,
+                                )
+                                if (target != from) onReorder(from, target)
+                            }
+                            draggingIndex = null
+                            dragOffset = Offset.Zero
+                        },
+                        onDragCancel = {
+                            draggingIndex = null
+                            dragOffset = Offset.Zero
+                        },
                     )
                 }
                 item {
@@ -721,16 +825,61 @@ private fun PageDrawer(
     }
 }
 
+private fun reorderTarget(
+    index: Int,
+    dragOffset: Offset,
+    columns: Int,
+    cellWidthPx: Float,
+    rowHeightPx: Float,
+    lastIndex: Int,
+): Int {
+    if (cellWidthPx <= 0f || rowHeightPx <= 0f || columns <= 0 || lastIndex < 0) return index
+    val startColumn = index % columns
+    val startRow = index / columns
+    val column = (startColumn + (dragOffset.x / cellWidthPx).roundToInt())
+        .coerceIn(0, columns - 1)
+    val row = (startRow + (dragOffset.y / rowHeightPx).roundToInt()).coerceAtLeast(0)
+    return (row * columns + column).coerceIn(0, lastIndex)
+}
+
 @Composable
 private fun PageTile(
     page: Page,
     index: Int,
     current: Boolean,
+    dragging: Boolean,
+    dragOffset: Offset,
     onClick: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onDragStart: () -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .zIndex(if (dragging) 1f else 0f)
+            .graphicsLayer {
+                translationX = dragOffset.x
+                translationY = dragOffset.y
+                val dragScale = if (dragging) 1.05f else 1f
+                scaleX = dragScale
+                scaleY = dragScale
+                shadowElevation = if (dragging) 18.dp.toPx() else 0f
+                alpha = if (dragging) 0.94f else 1f
+            }
+            .pointerInput(page.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragCancel() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDrag(dragAmount)
+                    },
+                )
+            }
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -754,6 +903,43 @@ private fun PageTile(
                 page = page,
                 modifier = Modifier.fillMaxSize(),
             )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp)
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+                    .clickable(onClick = onToggleBookmark),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (page.bookmarked) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = if (page.bookmarked) "Remove bookmark" else "Bookmark page",
+                    tint = if (page.bookmarked) {
+                        HighlighterAmber
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                    },
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.80f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.DragIndicator,
+                    contentDescription = "Drag to reorder page",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
         Text(

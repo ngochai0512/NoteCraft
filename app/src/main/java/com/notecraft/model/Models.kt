@@ -60,6 +60,25 @@ enum class ShapeType(val label: String) {
     ELLIPSE("Ellipse"),
 }
 
+/** How the eraser treats whatever it touches. */
+enum class EraserMode(val label: String) {
+    /** Split the touched stroke where the eraser passed over it. */
+    PARTIAL("Partial"),
+
+    /** Remove every whole stroke the eraser touches. */
+    OBJECT("Object"),
+}
+
+/** Horizontal alignment of wrapped text inside its box. */
+enum class TextAlignment(val label: String) {
+    LEFT("Left"),
+    CENTER("Center"),
+    RIGHT("Right"),
+}
+
+/** Default text-box width in page units. */
+const val DefaultTextWidth = 420f
+
 enum class PageBackground(val label: String) {
     BLANK("Blank paper"),
     LINED("Ruled · 8 mm"),
@@ -86,6 +105,7 @@ data class AppSettings(
     val defaultTool: ToolType = ToolType.BALL_PEN,
     val defaultPageBackground: PageBackground? = null,
     val showAutosaveIndicator: Boolean = true,
+    val stylusOnlyMode: Boolean = false,
 )
 
 /** A point in page coordinates, with the touch pressure recorded at input time. */
@@ -116,6 +136,9 @@ data class TextItem(
     val text: String,
     val color: Long,
     val fontSize: Float = 34f,
+    /** Width of the text box in page units. `0f` means a legacy auto-width box. */
+    val width: Float = 0f,
+    val alignment: TextAlignment = TextAlignment.LEFT,
 )
 
 data class Page(
@@ -123,6 +146,7 @@ data class Page(
     val background: PageBackground = PageBackground.BLANK,
     val strokes: List<Stroke> = emptyList(),
     val texts: List<TextItem> = emptyList(),
+    val bookmarked: Boolean = false,
 ) {
     val isEmpty: Boolean get() = strokes.isEmpty() && texts.isEmpty()
 }
