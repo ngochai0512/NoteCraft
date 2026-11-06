@@ -1,6 +1,8 @@
 # AGENTS.md — NoteCraft (Android)
 
 Guidance for AI coding assistants working in this repository. Read this file before changing code.
+Keep this file current: when a rule is wrong or repeatedly causes trouble, update it deliberately
+rather than silently ignoring it.
 
 ## 1. What this project is
 
@@ -85,6 +87,10 @@ Pure logic tests live under `app/src/test/java` (currently `GeometryTest.kt` for
 eraser). Run them with `./gradlew :app:testDebugUnitTest --offline`. UI tests are not set up yet.
 Do not claim runtime verification unless you ran the app on a device or emulator.
 
+- Treat warnings as signal. Do not introduce new compiler or lint warnings; fix warnings you create.
+- If a build or test fails, investigate the failure itself. Do not delete, skip, or weaken a test to
+  get green unless the test is provably wrong — and say so explicitly.
+
 ## 4. Architecture and state
 
 ```
@@ -121,6 +127,9 @@ MainActivity
   `coverTone` name. Text items may store `width` and `alignment`; missing values mean a legacy
   auto-width, left-aligned box. The repository writes via a temporary file and atomic rename under
   `Dispatchers.IO` with a `Mutex`.
+- Treat JSON field names and `SharedPreferences` keys as immutable on-disk identifiers. Never rename
+  or repurpose one without a migration path and tolerant defaults; a rename silently resets notes or
+  user preferences.
 - Saving is debounced (550 ms) and flushed when the editor closes or the app reaches `ON_STOP`.
   Any new user-visible mutation must end in `syncLibrary` + `scheduleSave`, or the existing
   `commitPages`/`applyPages` path.
@@ -244,40 +253,60 @@ Key rules:
   commas where used).
 - Prefer small private composables and focused functions over very large composables.
 - Use `rememberUpdatedState` for callbacks captured by long-lived gesture loops (existing pattern).
-- Avoid `GlobalScope`, blocking IO on the main thread, silent catch-all blocks, and suppressed
-  errors. Handle failures explicitly and keep the Ink fallback/logging intact.
+- Avoid `GlobalScope` and blocking IO on the main thread. Never swallow errors silently: an empty
+  `catch`, unexplained `runCatching`, or suppressed error needs a one-line justification. Handle,
+  log with enough context to reproduce, or propagate failures; keep the Ink fallback/logging intact.
+- User-facing failures should show a human-readable message, not a raw exception.
+- Prefer multi-line Compose modifier chains and readable blocks. One-line code is fine only for
+  simple lambdas, accessors, and single expressions; never compress multiple statements, modifier
+  chains, or non-trivial closures onto one line.
+- Do not introduce deprecated or soon-to-be-deprecated Android/Compose APIs. Prefer the current
+  supported API and check the existing dependencies before reaching for a new one.
 - Keep imports tidy and avoid unused code. Do not reformat or reorder unrelated code.
 - Do not edit generated files, build outputs, `.gradle/`, `.idea/`, `.kotlin/`, `.DS_Store`, or
   `local.properties`.
+- Touch only files named in the task or explicitly approved. Ask before deleting a file. If a task
+  seems to require changes outside that scope, stop and ask rather than assuming it is in bounds.
+- Never run destructive or irreversible commands without explicit approval: `git reset --hard`,
+  `git clean -fd`, `git checkout -- .`, `git push --force`, `git branch -D`, `git stash drop`, or
+  `git rebase` on pushed commits/main. Never run `sudo` or `rm -rf`.
 - Do not add a dependency when the platform, Compose, or existing code already solves the problem.
 
-## 11. Verification checklist
+## 11. Definition of done and verification
 
-Before reporting a task complete:
+Before reporting a task complete, confirm all of the following:
 
-1. `./gradlew :app:assembleDebug` (or clean offline build) passes.
-2. If an emulator/device is available: install, launch, and check logcat for crashes.
-3. Exercise the affected flow:
-   - library: create, open, rename, search, sort, duplicate, delete
-   - drawing: fountain, ball, brush, pencil, marker, shapes, tape, laser, text, lasso
-   - Ink wet stroke → dry NoteCraft stroke handoff
-   - zoom in/out, pan, and drawing alignment at 100% and zoomed
-   - partial and object eraser across a stroke, selection move/duplicate/delete, undo/redo
-   - page add/duplicate/delete/reorder, bookmark a page, every background template
-   - text wrapping, alignment, and corner resize
-   - recently used colors in a tool dropdown
-   - ruler straight-line drawing
-   - stylus-only finger rejection on a device with a stylus (if available)
-   - two-page spread and editing both pages on a tablet in landscape
-   - cover-tone chooser and persistence after relaunch
-   - settings: theme override, default tool, default paper, autosave indicator
-   - PDF export of a single-page and multi-page notebook, then open the PDF
-   - close/reopen the editor and relaunch the app to verify autosave
-   - phone portrait and landscape; tablet if available
-   - display cutout simulation: `adb shell cmd overlay enable
-     com.android.internal.display.cutout.emulation.tall`
-4. State clearly what was verified and what was not. Never claim a runtime check without a device
-   or emulator.
+- [ ] `./gradlew :app:assembleDebug` (or clean offline build) passes.
+- [ ] `./gradlew :app:testDebugUnitTest --offline` passes for affected pure logic.
+- [ ] No new compiler or lint warnings were introduced.
+- [ ] If an emulator/device is available: install, launch, and check logcat for crashes.
+- [ ] Exercise the affected flow:
+  - library: create, open, rename, search, sort, duplicate, delete
+  - drawing: fountain, ball, brush, pencil, marker, shapes, tape, laser, text, lasso
+  - Ink wet stroke → dry NoteCraft stroke handoff
+  - zoom in/out, pan, and drawing alignment at 100% and zoomed
+  - partial and object eraser across a stroke, selection move/duplicate/delete, undo/redo
+  - page add/duplicate/delete/reorder, bookmark a page, every background template
+  - text wrapping, alignment, and corner resize
+  - recently used colors in a tool dropdown
+  - ruler straight-line drawing
+  - stylus-only finger rejection on a device with a stylus (if available)
+  - two-page spread and editing both pages on a tablet in landscape
+  - cover-tone chooser and persistence after relaunch
+  - settings: theme override, default tool, default paper, autosave indicator
+  - PDF export of a single-page and multi-page notebook, then open the PDF
+  - close/reopen the editor and relaunch the app to verify autosave
+  - phone portrait and landscape; tablet if available
+  - display cutout simulation: `adb shell cmd overlay enable
+    com.android.internal.display.cutout.emulation.tall`
+- [ ] `README.md`, `DESIGN.md`, and this file are updated when user-visible behavior, persistence,
+  setup, or a rule changes.
+- [ ] No dependency was added without approval.
+- [ ] No deprecated API was introduced (see section 10).
+- [ ] State clearly what was verified and what was not. Never claim a runtime check without a device
+  or emulator.
+
+If any box cannot be checked, say so explicitly rather than omitting or hiding it.
 
 ## 12. Known limitations and scope
 
@@ -308,10 +337,13 @@ existing model over speculative abstractions.
   - `fix(android): ...`
   - `docs: ...`
   - `chore: ...`
-- Keep commits focused. Do not commit or push unless the user asks.
+- Keep commits focused. One logical change per commit: keep refactors behavior-identical and
+  separate from feature work; do not bundle unrelated fixes, formatting, and features in one diff.
+- Do not commit or push unless the user asks.
 - Never commit `local.properties`, `.idea/`, build outputs, APKs/AABs, `.gradle/`, or `.DS_Store`.
 - Update `README.md` and `DESIGN.md` when behavior, persistence, canvas rules, orientation, or
   cutout behavior changes.
+- Update this file deliberately when a rule is wrong or repeatedly causes trouble.
 - Do not rewrite or amend commits after they are shared.
 
 ## 14. Ask before changing
