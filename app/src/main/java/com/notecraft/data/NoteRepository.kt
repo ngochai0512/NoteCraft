@@ -68,6 +68,7 @@ class NoteRepository(context: Context) {
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
         if (coverTone != null) put("coverTone", coverTone)
+        if (pinned) put("pinned", true)
         put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
     }
 
@@ -126,6 +127,7 @@ class NoteRepository(context: Context) {
             updatedAt = json.optLong("updatedAt", now),
             pages = pages,
             coverTone = json.optString("coverTone").takeIf { it.isNotBlank() },
+            pinned = json.optBoolean("pinned", false),
         )
     }
 

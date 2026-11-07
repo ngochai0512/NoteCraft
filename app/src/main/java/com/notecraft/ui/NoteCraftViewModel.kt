@@ -254,6 +254,19 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         scheduleSave(updated)
     }
 
+    /** Pin/unpin a notebook; pinned notebooks sort first in the library. */
+    fun toggleNotePin(noteId: String) {
+        val existing = library.notes.firstOrNull { it.id == noteId }
+            ?: editor?.note?.takeIf { it.id == noteId }
+            ?: return
+        val updated = existing.copy(pinned = !existing.pinned)
+        syncLibrary(updated)
+        if (editor?.note?.id == noteId) {
+            editor = editor?.copy(note = updated)
+        }
+        scheduleSave(updated)
+    }
+
     private fun loadSettings(): AppSettings {
         val themeMode = runCatching {
             ThemeMode.valueOf(

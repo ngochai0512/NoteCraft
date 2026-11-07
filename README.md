@@ -45,6 +45,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 ### Notes and pages
 
 - Create, rename, duplicate, and delete notes
+- Pin notebooks to keep them at the top of the library, regardless of the selected sort
 - Add, duplicate, delete, and reorder pages by long-pressing a page thumbnail and dragging it
 - Star a page as a bookmark; the star is shown on its page-drawer thumbnail
 - Page backgrounds: blank, ruled, squared graph, dotted, Cornell, daily planner, weekly planner, music staff, storyboard and checklist
@@ -228,7 +229,7 @@ filesDir/notes/<note-id>.json
 
 Notes contain pages, and each page contains strokes and text items. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
 
-A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A page may also store `bookmarked`. A stroke saves:
+A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A note may store `pinned` to keep it above unpinned notebooks in the library. A page may also store `bookmarked`. A stroke saves:
 
 - Tool type
 - ARGB color

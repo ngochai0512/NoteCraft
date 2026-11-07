@@ -158,6 +158,7 @@ data class Note(
     val updatedAt: Long,
     val pages: List<Page>,
     val coverTone: String? = null,
+    val pinned: Boolean = false,
 ) {
     val pageCount: Int get() = pages.size
 }

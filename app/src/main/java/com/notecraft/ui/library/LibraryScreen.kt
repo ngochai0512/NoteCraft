@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -151,14 +153,15 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
     val screenPadding = if (isTablet) 24.dp else 16.dp
 
     val filtered = remember(library.notes, query, sort) {
+        val sortComparator = when (sort) {
+            NoteSort.UPDATED -> compareByDescending<Note> { it.updatedAt }
+            NoteSort.CREATED -> compareByDescending<Note> { it.createdAt }
+            NoteSort.TITLE -> compareBy<Note> { it.title.lowercase() }
+        }
         library.notes
             .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
             .sortedWith(
-                when (sort) {
-                    NoteSort.UPDATED -> compareByDescending { it.updatedAt }
-                    NoteSort.CREATED -> compareByDescending { it.createdAt }
-                    NoteSort.TITLE -> compareBy { it.title.lowercase() }
-                },
+                compareByDescending<Note> { it.pinned }.then(sortComparator),
             )
     }
 
@@ -392,6 +395,10 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                                     menuNoteId = null
                                     coverNote = note
                                 },
+                                onTogglePin = {
+                                    menuNoteId = null
+                                    viewModel.toggleNotePin(note.id)
+                                },
                                 onExport = {
                                     menuNoteId = null
                                     exportNote = note
@@ -616,6 +623,7 @@ private fun NoteCard(
     onRename: () -> Unit,
     onDuplicate: () -> Unit,
     onCover: () -> Unit,
+    onTogglePin: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -678,6 +686,30 @@ private fun NoteCard(
                 )
             }
 
+            // Pinned badge.
+            if (note.pinned) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp),
+                    shape = CircleShape,
+                    color = PaperIvory.copy(alpha = 0.94f),
+                    shadowElevation = 2.dp,
+                ) {
+                    Box(
+                        modifier = Modifier.size(30.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.PushPin,
+                            contentDescription = "Pinned notebook",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+            }
+
             // Ribbon bookmark.
             Canvas(
                 modifier = Modifier
@@ -724,6 +756,21 @@ private fun NoteCard(
                     expanded = menuExpanded,
                     onDismissRequest = onMenuDismiss,
                 ) {
+                    DropdownMenuItem(
+                        text = { Text(if (note.pinned) "Unpin notebook" else "Pin notebook") },
+                        leadingIcon = {
+                            Icon(
+                                if (note.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                contentDescription = null,
+                                tint = if (note.pinned) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        },
+                        onClick = onTogglePin,
+                    )
                     DropdownMenuItem(
                         text = { Text("Rename") },
                         leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },

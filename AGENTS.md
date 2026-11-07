@@ -123,10 +123,10 @@ MainActivity
 - `PrimaryTools`, `SecondaryTools`, and `PersistentTools` drive the editor UI. The laser is
   transient and must not be persisted; eraser strokes are not stored.
 - Notes are JSON files at `filesDir/notes/<note-id>.json`, format `version = 1`. Pages contain
-  strokes and text items; a page may store `bookmarked`, and a note may also store an optional
-  `coverTone` name. Text items may store `width` and `alignment`; missing values mean a legacy
-  auto-width, left-aligned box. The repository writes via a temporary file and atomic rename under
-  `Dispatchers.IO` with a `Mutex`.
+  strokes and text items; a page may store `bookmarked`, and a note may store an optional
+  `coverTone` name or `pinned` flag. Text items may store `width` and `alignment`; missing values
+  mean a legacy auto-width, left-aligned box. The repository writes via a temporary file and atomic
+  rename under `Dispatchers.IO` with a `Mutex`.
 - Treat JSON field names and `SharedPreferences` keys as immutable on-disk identifiers. Never rename
   or repurpose one without a migration path and tolerant defaults; a rename silently resets notes or
   user preferences.
@@ -240,6 +240,8 @@ Key rules:
 - Page backgrounds are undoable.
 - Notebook covers can be automatic (derived from the note id) or one of the named tones; persist
   the choice through `Note.coverTone`.
+- Notebooks can be pinned from the library card menu and sort above unpinned notebooks for every
+  sort mode. Persist the flag through `Note.pinned`; do not change `updatedAt` just to reorder.
 - Page bookmarks persist through `Page.bookmarked` and are toggled in the page drawer or editor
   menu. Drag-and-drop reordering in the drawer uses `movePageTo`.
 - PDF export uses the system document picker and rasterizes pages at 150 dpi. Do not change the
@@ -281,7 +283,7 @@ Before reporting a task complete, confirm all of the following:
 - [ ] No new compiler or lint warnings were introduced.
 - [ ] If an emulator/device is available: install, launch, and check logcat for crashes.
 - [ ] Exercise the affected flow:
-  - library: create, open, rename, search, sort, duplicate, delete
+  - library: create, open, rename, search, sort, duplicate, delete, pin/unpin
   - drawing: fountain, ball, brush, pencil, marker, shapes, tape, laser, text, lasso
   - Ink wet stroke → dry NoteCraft stroke handoff
   - zoom in/out, pan, and drawing alignment at 100% and zoomed

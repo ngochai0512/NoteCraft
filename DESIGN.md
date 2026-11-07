@@ -98,7 +98,8 @@
 
 ### 2. Digital Notebook Card (Documents Home)
 * Realistic ratio (`3:4`) notebook preview with spine binding, leather/matte finish, ribbon bookmark, label badge, and edited timestamp.
-* Quick-action context menu (`...`) for cover tone, PDF export, duplicate and trash.
+* Quick-action context menu (`...`) for pin/unpin, cover tone, PDF export, duplicate and trash.
+* Pinned notebooks show a pin badge and stay above unpinned notebooks for every sort mode.
 * Cover-tone chooser with automatic, navy leather, terracotta, forest sage, pastel lavender and charcoal options.
 
 ### 3. Canvas Paper
