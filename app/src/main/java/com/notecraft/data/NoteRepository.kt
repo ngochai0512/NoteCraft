@@ -6,9 +6,12 @@ import com.notecraft.model.Page
 import com.notecraft.model.PageBackground
 import com.notecraft.model.Pt
 import com.notecraft.model.ShapeType
+import com.notecraft.model.StickyNote
 import com.notecraft.model.Stroke
 import com.notecraft.model.TextAlignment
+import com.notecraft.model.TextFormatting
 import com.notecraft.model.TextItem
+import com.notecraft.model.TextListStyle
 import com.notecraft.model.ToolType
 import com.notecraft.model.blankPage
 import com.notecraft.model.newId
@@ -78,6 +81,7 @@ class NoteRepository(context: Context) {
         if (bookmarked) put("bookmarked", true)
         put("strokes", JSONArray().apply { strokes.forEach { put(it.toJson()) } })
         put("texts", JSONArray().apply { texts.forEach { put(it.toJson()) } })
+        put("stickies", JSONArray().apply { stickies.forEach { put(it.toJson()) } })
     }
 
     private fun Stroke.toJson(): JSONObject = JSONObject().apply {
@@ -107,6 +111,23 @@ class NoteRepository(context: Context) {
         put("fontSize", fontSize.toDouble())
         if (width > 0f) put("width", width.toDouble())
         if (alignment != TextAlignment.LEFT) put("alignment", alignment.name)
+        if (formatting.bold) put("bold", true)
+        if (formatting.italic) put("italic", true)
+        if (formatting.underline) put("underline", true)
+        if (formatting.listStyle != TextListStyle.NONE) put("listStyle", formatting.listStyle.name)
+        if (formatting.lineSpacing != 1f) put("lineSpacing", formatting.lineSpacing.toDouble())
+        if (formatting.highlightColor != null) put("highlightColor", formatting.highlightColor)
+    }
+
+    private fun StickyNote.toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("x", x.toDouble())
+        put("y", y.toDouble())
+        put("width", width.toDouble())
+        put("height", height.toDouble())
+        put("text", text)
+        put("color", color)
+        put("fontSize", fontSize.toDouble())
     }
 
     private fun parseNote(json: JSONObject): Note {
@@ -149,11 +170,20 @@ class NoteRepository(context: Context) {
                 }
             }
         }
+        val stickiesJson = json.optJSONArray("stickies")
+        val stickies = buildList {
+            if (stickiesJson != null) {
+                for (i in 0 until stickiesJson.length()) {
+                    stickiesJson.optJSONObject(i)?.let { add(parseSticky(it)) }
+                }
+            }
+        }
         return Page(
             id = json.optString("id").ifBlank { newId() },
             background = enumValueOrDefault(json.optString("background"), PageBackground.BLANK),
             strokes = strokes,
             texts = texts,
+            stickies = stickies,
             bookmarked = json.optBoolean("bookmarked", false),
         )
     }
@@ -196,6 +226,25 @@ class NoteRepository(context: Context) {
         fontSize = json.optDouble("fontSize", 34.0).toFloat(),
         width = json.optDouble("width", 0.0).toFloat(),
         alignment = enumValueOrDefault(json.optString("alignment"), TextAlignment.LEFT),
+        formatting = TextFormatting(
+            bold = json.optBoolean("bold", false),
+            italic = json.optBoolean("italic", false),
+            underline = json.optBoolean("underline", false),
+            listStyle = enumValueOrDefault(json.optString("listStyle"), TextListStyle.NONE),
+            lineSpacing = json.optDouble("lineSpacing", 1.0).toFloat().coerceIn(0.8f, 2f),
+            highlightColor = if (json.has("highlightColor")) json.optLong("highlightColor") else null,
+        ),
+    )
+
+    private fun parseSticky(json: JSONObject): StickyNote = StickyNote(
+        id = json.optString("id").ifBlank { newId() },
+        x = json.optDouble("x", 0.0).toFloat(),
+        y = json.optDouble("y", 0.0).toFloat(),
+        width = json.optDouble("width", 280.0).toFloat(),
+        height = json.optDouble("height", 202.0).toFloat(),
+        text = json.optString("text"),
+        color = json.optLong("color", 0xFFFEF08AL),
+        fontSize = json.optDouble("fontSize", 28.0).toFloat(),
     )
 
     /**

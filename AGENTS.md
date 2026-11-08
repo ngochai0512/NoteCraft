@@ -39,6 +39,7 @@ Do not answer from memory or guess APIs. Read the files that own the behavior yo
 - `app/src/main/java/com/notecraft/ui/settings/SettingsScreen.kt` — dedicated preferences screen.
 - `app/src/main/java/com/notecraft/ui/components/CoverToneDialog.kt` — notebook cover chooser.
 - `app/src/main/java/com/notecraft/util/PdfExporter.kt` — PDF rendering and export.
+- `app/src/main/java/com/notecraft/util/PageSharer.kt` — PNG page sharing through `FileProvider`.
 - `app/src/main/java/com/notecraft/util/Geometry.kt` — hit tests, partial eraser, lasso selection.
 - `app/src/main/AndroidManifest.xml`, `app/build.gradle.kts`, `settings.gradle.kts`.
 
@@ -123,10 +124,12 @@ MainActivity
 - `PrimaryTools`, `SecondaryTools`, and `PersistentTools` drive the editor UI. The laser is
   transient and must not be persisted; eraser strokes are not stored.
 - Notes are JSON files at `filesDir/notes/<note-id>.json`, format `version = 1`. Pages contain
-  strokes and text items; a page may store `bookmarked`, and a note may store an optional
-  `coverTone` name or `pinned` flag. Text items may store `width` and `alignment`; missing values
-  mean a legacy auto-width, left-aligned box. The repository writes via a temporary file and atomic
-  rename under `Dispatchers.IO` with a `Mutex`.
+  strokes, text items, and sticky notes; a page may store `bookmarked`, and a note may store an
+  optional `coverTone` name or `pinned` flag. Text items may store `width`, `alignment`, `bold`,
+  `italic`, `underline`, `listStyle`, `lineSpacing`, and `highlightColor`; missing values mean a
+  legacy auto-width, left-aligned, plain box. Sticky notes store position, size, text, color, and
+  font size. The repository writes via a temporary file and atomic rename under `Dispatchers.IO`
+  with a `Mutex`.
 - Treat JSON field names and `SharedPreferences` keys as immutable on-disk identifiers. Never rename
   or repurpose one without a migration path and tolerant defaults; a rename silently resets notes or
   user preferences.
@@ -145,7 +148,8 @@ MainActivity
 
 `DrawingCanvas` owns the viewport (`zoom` 1–8, unbounded two-finger pan), gesture state machine,
 preview stroke, lasso preview, and laser trail. `PageRenderer` draws the paper, background pattern,
-strokes, text, and selection.
+strokes, text, and selection. Sticky notes are page objects rendered above ink and text; they are
+included in thumbnails, PDF export, and page sharing.
 
 Key rules:
 
@@ -227,7 +231,13 @@ Key rules:
 - Laser is a fading transient trail and is never saved.
 - Lasso supports select, move, duplicate, and delete. Move by dragging inside the selection bounds.
 - Text tool: tap empty paper to add text; tap existing text to edit it; drag the bottom-right box
-  handle to resize its wrapping width. Text alignment applies to new and edited text.
+  handle to resize its wrapping width. Text alignment and formatting (bold, italic, underline,
+  bullet/numbered lists, line spacing, highlight) live in the text dialog and apply to new and
+  edited text.
+- Sticky tool: tap empty paper to add a colored sticky note, tap a note to edit it, and drag it to
+  move it. The eraser removes sticky notes whole. Sticky notes are not part of lasso selection.
+- Page-level export and sharing use the current page: export as PDF through the document picker or
+  share as PNG through `PageSharer`. Whole-notebook export remains the editor/library PDF action.
 - The eraser has Partial and Object modes. Partial removes only the touched portion of a stroke and
   splits the remainder into pieces; Object removes whole strokes. Shapes and text are removed whole
   in either mode. Keep the `beginErase`/`endErase` undo baseline intact.
@@ -289,9 +299,11 @@ Before reporting a task complete, confirm all of the following:
   - zoom in/out, pan, and drawing alignment at 100% and zoomed
   - partial and object eraser across a stroke, selection move/duplicate/delete, undo/redo
   - page add/duplicate/delete/reorder, bookmark a page, every background template
-  - text wrapping, alignment, and corner resize
+  - text wrapping, alignment, formatting, lists, highlight, and corner resize
+  - sticky note add/edit/move/erase
   - recently used colors in a tool dropdown
   - ruler straight-line drawing
+  - current-page PDF export and PNG share
   - stylus-only finger rejection on a device with a stylus (if available)
   - two-page spread and editing both pages on a tablet in landscape
   - cover-tone chooser and persistence after relaunch
@@ -319,6 +331,9 @@ asking:
   shapes and text are removed whole.
 - Text boxes wrap at their stored width. Height is automatic and there is no vertical box
   constraint.
+- Sticky notes are moved and edited directly with the Sticky tool; they are not part of lasso
+  selection.
+- Page-level export/share handles the current page only; whole-notebook export is PDF.
 - Undo history is session-only.
 - Notes are local only: no sync, export, cloud backup, or sharing.
 - Page navigation is page-by-page with controls/drawer, not a continuous scroll canvas. Tablet
@@ -326,7 +341,7 @@ asking:
 - Media insertion and collaboration are not implemented.
 - Dry strokes use NoteCraft's renderer, so wet Ink and dry strokes can differ slightly.
 - Ruler and stylus-only modes use NoteCraft's custom renderer instead of the Ink overlay.
-- Pencil, shapes, tape, laser, text, and lasso remain custom implementations.
+- Pencil, shapes, tape, laser, text, sticky notes, and lasso remain custom implementations.
 
 New features should be requested before being built. Prefer small, testable additions to the
 existing model over speculative abstractions.

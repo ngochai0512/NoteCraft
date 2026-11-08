@@ -72,6 +72,7 @@ import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.model.Pt
 import com.notecraft.model.ShapeType
+import com.notecraft.model.StickyNote
 import com.notecraft.model.Stroke as InkStroke
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
@@ -103,7 +104,7 @@ private class CanvasViewport {
     var pan by mutableStateOf(Offset.Zero)
 }
 
-private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, TEXT_RESIZE, LASSO, MOVE, LASER }
+private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, TEXT_RESIZE, STICKY, STICKY_MOVE, LASSO, MOVE, LASER }
 
 /** Freehand tools rendered through Jetpack Ink while authoring. */
 private val InkToolTypes = setOf(
@@ -139,6 +140,11 @@ fun DrawingCanvas(
     onTextResizeStart: () -> Unit,
     onTextResize: (String, Float) -> Unit,
     onTextResizeEnd: () -> Unit,
+    onAddSticky: (Offset, Int) -> Unit,
+    onEditSticky: (StickyNote) -> Unit,
+    onStickyMoveStart: () -> Unit,
+    onStickyMove: (String, Offset) -> Unit,
+    onStickyMoveEnd: () -> Unit,
     onShowPages: () -> Unit,
     onShowPageBackground: () -> Unit,
     modifier: Modifier = Modifier,
@@ -177,6 +183,11 @@ fun DrawingCanvas(
     val textResizeStart by rememberUpdatedState(onTextResizeStart)
     val textResize by rememberUpdatedState(onTextResize)
     val textResizeEnd by rememberUpdatedState(onTextResizeEnd)
+    val addSticky by rememberUpdatedState(onAddSticky)
+    val editSticky by rememberUpdatedState(onEditSticky)
+    val stickyMoveStart by rememberUpdatedState(onStickyMoveStart)
+    val stickyMove by rememberUpdatedState(onStickyMove)
+    val stickyMoveEnd by rememberUpdatedState(onStickyMoveEnd)
 
     LaunchedEffect(page.id, secondPage?.id) {
         viewport.zoom = 1f
@@ -411,6 +422,9 @@ fun DrawingCanvas(
                         var resizeTextId: String? = null
                         var resizeStartWidth = 0f
                         var resizeStartX = 0f
+                        var stickyMoveActive = false
+                        var movingStickyId: String? = null
+                        var stickyMoved = false
                         var rulerSnap = false
                         if (rulerEnabled && distanceToRuler(down.position) <= 64.dp.toPx()) {
                             rulerSnap = true
@@ -486,41 +500,61 @@ fun DrawingCanvas(
                             }
 
                             ToolType.TEXT -> {
-                                if (handleHit != null) {
-                                    mode = GestureMode.TEXT_RESIZE
-                                    resizeTextId = handleHit.id
-                                    resizeStartWidth = if (handleHit.width > 0f) {
-                                        handleHit.width
+                                if (!stylusOnly || downIsStylus) {
+                                    if (handleHit != null) {
+                                        mode = GestureMode.TEXT_RESIZE
+                                        resizeTextId = handleHit.id
+                                        resizeStartWidth = if (handleHit.width > 0f) {
+                                            handleHit.width
+                                        } else {
+                                            handleHit.approximateBounds().width
+                                        }
+                                        resizeStartX = downPage.x
+                                        textResizeActive = true
+                                        textResizeStart()
                                     } else {
-                                        handleHit.approximateBounds().width
+                                        mode = GestureMode.TEXT
                                     }
-                                    resizeStartX = downPage.x
-                                    textResizeActive = true
-                                    textResizeStart()
-                                } else {
-                                    mode = GestureMode.TEXT
+                                }
+                            }
+
+                            ToolType.STICKY -> {
+                                if (!stylusOnly || downIsStylus) {
+                                    val hit = targetPage.stickies.lastOrNull {
+                                        it.hitTest(downPage.x, downPage.y, 8f)
+                                    }
+                                    if (hit != null) {
+                                        mode = GestureMode.STICKY_MOVE
+                                        movingStickyId = hit.id
+                                        stickyMoveActive = true
+                                        stickyMoveStart()
+                                    } else {
+                                        mode = GestureMode.STICKY
+                                    }
                                 }
                             }
 
                             ToolType.LASSO -> {
-                                val transform = currentTransform()
-                                val selectionBounds = if (targetIndex == currentSelectionPage && transform.scale > 0f) {
-                                    selectionBounds(
-                                        pageFor(currentSelectionPage),
-                                        currentSelectedStrokes,
-                                        currentSelectedTexts,
-                                    )
-                                } else {
-                                    null
-                                }
-                                if (selectionBounds != null && selectionBounds.expand(14f).contains(downPage.x, downPage.y)) {
-                                    mode = GestureMode.MOVE
-                                    selectionMoveActive = true
-                                    selectionMoveStart()
-                                } else {
-                                    mode = GestureMode.LASSO
-                                    lassoPoints.add(Pt(downPage.x, downPage.y, 0.5f))
-                                    lassoPreview = lassoPoints.toList()
+                                if (!stylusOnly || downIsStylus) {
+                                    val transform = currentTransform()
+                                    val selectionBounds = if (targetIndex == currentSelectionPage && transform.scale > 0f) {
+                                        selectionBounds(
+                                            pageFor(currentSelectionPage),
+                                            currentSelectedStrokes,
+                                            currentSelectedTexts,
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                    if (selectionBounds != null && selectionBounds.expand(14f).contains(downPage.x, downPage.y)) {
+                                        mode = GestureMode.MOVE
+                                        selectionMoveActive = true
+                                        selectionMoveStart()
+                                    } else {
+                                        mode = GestureMode.LASSO
+                                        lassoPoints.add(Pt(downPage.x, downPage.y, 0.5f))
+                                        lassoPreview = lassoPoints.toList()
+                                    }
                                 }
                             }
                         }
@@ -553,6 +587,10 @@ fun DrawingCanvas(
                                     if (textResizeActive) {
                                         textResizeEnd()
                                         textResizeActive = false
+                                    }
+                                    if (stickyMoveActive) {
+                                        stickyMoveEnd()
+                                        stickyMoveActive = false
                                     }
                                     mode = GestureMode.NONE
                                 }
@@ -631,6 +669,27 @@ fun DrawingCanvas(
                                             }
                                         }
 
+                                        GestureMode.STICKY_MOVE -> {
+                                            val id = movingStickyId
+                                            val delta = change.position - change.previousPosition
+                                            if (id != null && delta != Offset.Zero && transform.scale > 0f) {
+                                                stickyMove(
+                                                    id,
+                                                    Offset(
+                                                        delta.x / transform.scale,
+                                                        delta.y / transform.scale,
+                                                    ),
+                                                )
+                                                stickyMoved = true
+                                            }
+                                        }
+
+                                        GestureMode.STICKY -> {
+                                            if ((change.position - down.position).getDistance() > touchSlop) {
+                                                moved = true
+                                            }
+                                        }
+
                                         GestureMode.TEXT -> {
                                             if ((change.position - down.position).getDistance() > touchSlop) {
                                                 moved = true
@@ -663,6 +722,18 @@ fun DrawingCanvas(
                                 GestureMode.ERASE -> if (eraseActive) eraseEnd()
                                 GestureMode.MOVE -> if (selectionMoveActive) selectionMoveEnd()
                                 GestureMode.TEXT_RESIZE -> if (textResizeActive) textResizeEnd()
+                                GestureMode.STICKY_MOVE -> {
+                                    if (stickyMoveActive) {
+                                        if (!stickyMoved) {
+                                            val id = movingStickyId
+                                            if (id != null) {
+                                                targetPage.stickies.firstOrNull { it.id == id }?.let(editSticky)
+                                            }
+                                        }
+                                        stickyMoveEnd()
+                                    }
+                                }
+                                GestureMode.STICKY -> if (!moved) addSticky(downPage, targetIndex)
 
                                 GestureMode.LASSO -> {
                                     if (lassoPoints.size >= 3) {
@@ -745,6 +816,13 @@ fun DrawingCanvas(
                     pages.forEachIndexed { index, item ->
                         val pageOrigin = pageOriginFor(index)
                         item.texts.forEach { text -> drawTextFrame(text, transform.scale, pageOrigin) }
+                    }
+                }
+
+                if (tool == ToolType.STICKY) {
+                    pages.forEachIndexed { index, item ->
+                        val pageOrigin = pageOriginFor(index)
+                        item.stickies.forEach { note -> drawStickyFrame(note, transform.scale, pageOrigin) }
                     }
                 }
 
@@ -951,7 +1029,7 @@ fun DrawingCanvas(
             }
         }
 
-        if (tool == ToolType.TEXT || tool == ToolType.LASSO) {
+        if (tool == ToolType.TEXT || tool == ToolType.LASSO || tool == ToolType.STICKY) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -965,10 +1043,10 @@ fun DrawingCanvas(
                 shadowElevation = 4.dp,
             ) {
                 Text(
-                    text = if (tool == ToolType.TEXT) {
-                        "Tap the page to add a text box · drag its corner to resize"
-                    } else {
-                        "Circle items to select · drag to move"
+                    text = when (tool) {
+                        ToolType.TEXT -> "Tap the page to add a text box · drag its corner to resize"
+                        ToolType.STICKY -> "Tap to add a sticky note · drag a note to move it"
+                        else -> "Circle items to select · drag to move"
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = hintText,

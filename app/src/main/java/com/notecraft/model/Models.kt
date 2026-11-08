@@ -17,6 +17,7 @@ enum class ToolType(val label: String) {
     TAPE("Tape"),
     LASER("Laser"),
     TEXT("Text"),
+    STICKY("Sticky"),
     LASSO("Lasso"),
 }
 
@@ -30,6 +31,7 @@ val PrimaryTools: List<ToolType> = listOf(
     ToolType.ERASER,
     ToolType.LASSO,
     ToolType.TEXT,
+    ToolType.STICKY,
 )
 
 /** Tools kept out of the primary row, reachable from the editor's overflow menu. */
@@ -50,6 +52,7 @@ val PersistentTools: Set<ToolType> = setOf(
     ToolType.SHAPE,
     ToolType.TAPE,
     ToolType.TEXT,
+    ToolType.STICKY,
     ToolType.LASSO,
 )
 
@@ -78,6 +81,47 @@ enum class TextAlignment(val label: String) {
 
 /** Default text-box width in page units. */
 const val DefaultTextWidth = 420f
+
+/** List decoration applied when the text is rendered. Stored text stays plain. */
+enum class TextListStyle(val label: String) {
+    NONE("None"),
+    BULLET("Bullets"),
+    NUMBERED("Numbers"),
+}
+
+/** Font and paragraph formatting for a text box. */
+data class TextFormatting(
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val listStyle: TextListStyle = TextListStyle.NONE,
+    val lineSpacing: Float = 1f,
+    val highlightColor: Long? = null,
+) {
+    val isPlain: Boolean
+        get() = !bold && !italic && !underline &&
+            listStyle == TextListStyle.NONE && highlightColor == null
+
+    /** Prefix list lines at render time so the stored text remains editable as plain text. */
+    fun decorate(text: String): String {
+        if (listStyle == TextListStyle.NONE) return text
+        var number = 0
+        return text.split('\n').joinToString("\n") { line ->
+            if (line.isBlank()) {
+                line
+            } else {
+                when (listStyle) {
+                    TextListStyle.BULLET -> "•  $line"
+                    TextListStyle.NUMBERED -> {
+                        number++
+                        "$number.  $line"
+                    }
+                    TextListStyle.NONE -> line
+                }
+            }
+        }
+    }
+}
 
 enum class PageBackground(val label: String) {
     BLANK("Blank paper"),
@@ -139,6 +183,22 @@ data class TextItem(
     /** Width of the text box in page units. `0f` means a legacy auto-width box. */
     val width: Float = 0f,
     val alignment: TextAlignment = TextAlignment.LEFT,
+    val formatting: TextFormatting = TextFormatting(),
+) {
+    /** The text as rendered, including any list markers. */
+    val displayText: String get() = formatting.decorate(text)
+}
+
+/** A lightweight colored note card pinned to a page. */
+data class StickyNote(
+    val id: String,
+    val x: Float,
+    val y: Float,
+    val width: Float = 280f,
+    val height: Float = 202f,
+    val text: String,
+    val color: Long = StickyYellow,
+    val fontSize: Float = 28f,
 )
 
 data class Page(
@@ -146,9 +206,10 @@ data class Page(
     val background: PageBackground = PageBackground.BLANK,
     val strokes: List<Stroke> = emptyList(),
     val texts: List<TextItem> = emptyList(),
+    val stickies: List<StickyNote> = emptyList(),
     val bookmarked: Boolean = false,
 ) {
-    val isEmpty: Boolean get() = strokes.isEmpty() && texts.isEmpty()
+    val isEmpty: Boolean get() = strokes.isEmpty() && texts.isEmpty() && stickies.isEmpty()
 }
 
 data class Note(
@@ -197,6 +258,7 @@ fun Page.duplicate(): Page = copy(
     id = newId(),
     strokes = strokes.map { it.copy(id = newId()) },
     texts = texts.map { it.copy(id = newId()) },
+    stickies = stickies.map { it.copy(id = newId()) },
 )
 
 val DefaultToolWidths: Map<ToolType, Float> = mapOf(
@@ -210,6 +272,7 @@ val DefaultToolWidths: Map<ToolType, Float> = mapOf(
     ToolType.TAPE to 26f,
     ToolType.LASER to 5f,
     ToolType.TEXT to 34f,
+    ToolType.STICKY to 280f,
     ToolType.LASSO to 4f,
 )
 
@@ -219,6 +282,7 @@ const val DefaultShapeColor: Long = 0xFF2563EBL
 const val PencilGrey: Long = 0xFF475569L
 const val LaserRed: Long = 0xFFEF4444L
 const val TapeColor: Long = 0xFFFDE68AL
+const val StickyYellow: Long = 0xFFFEF08AL
 
 val DefaultToolColors: Map<ToolType, Long> = mapOf(
     ToolType.FOUNTAIN_PEN to InkBlack,
@@ -231,5 +295,6 @@ val DefaultToolColors: Map<ToolType, Long> = mapOf(
     ToolType.TAPE to TapeColor,
     ToolType.LASER to LaserRed,
     ToolType.TEXT to InkBlack,
+    ToolType.STICKY to StickyYellow,
     ToolType.LASSO to DefaultShapeColor,
 )

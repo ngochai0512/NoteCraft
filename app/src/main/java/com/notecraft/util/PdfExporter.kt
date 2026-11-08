@@ -47,10 +47,26 @@ object PdfExporter {
         return "$cleaned.pdf"
     }
 
-    suspend fun export(context: Context, uri: Uri, note: Note) = withContext(Dispatchers.IO) {
+    fun pageFileName(title: String, pageNumber: Int): String {
+        val cleaned = title
+            .removeSuffix(".pdf")
+            .replace(Regex("[\\\\/:*?\"<>|]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .ifBlank { "NoteCraft" }
+        return "$cleaned - Page $pageNumber.pdf"
+    }
+
+    suspend fun export(context: Context, uri: Uri, note: Note) =
+        exportPages(context, uri, note.pages)
+
+    suspend fun exportPage(context: Context, uri: Uri, page: Page) =
+        exportPages(context, uri, listOf(page))
+
+    suspend fun exportPages(context: Context, uri: Uri, pages: List<Page>) = withContext(Dispatchers.IO) {
         val document = PdfDocument()
         try {
-            note.pages.forEachIndexed { index, page ->
+            pages.forEachIndexed { index, page ->
                 val bitmap = renderPage(page)
                 try {
                     val pageInfo = PdfDocument.PageInfo.Builder(
@@ -84,7 +100,7 @@ object PdfExporter {
         }
     }
 
-    private fun renderPage(page: Page): Bitmap {
+    fun renderPage(page: Page): Bitmap {
         val scale = PAGE_BITMAP_WIDTH / PAGE_WIDTH
         val bitmap = Bitmap.createBitmap(
             PAGE_BITMAP_WIDTH,

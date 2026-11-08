@@ -92,8 +92,9 @@
   3. Precision Eraser (Partial vs Object toggle)
   4. Lasso Selection Tool
   5. Stickers / Elements Picker
-  6. Text Box (`T`) with wrapping, alignment, and a corner resize handle
-  7. Media / Camera Insert
+  6. Text Box (`T`) with wrapping, alignment, bold/italic/underline, lists, line spacing, highlight, and a corner resize handle
+  7. Sticky Note with a colored card, wrapped text, direct drag-to-move and tap-to-edit
+  8. Media / Camera Insert
 * **Contextual Sub-bar**: Recently used inks + color dots (3 quick-swap presets) + Stroke width selectors (0.3mm, 0.7mm, 1.5mm) + Undo/Redo controls.
 
 ### 2. Digital Notebook Card (Documents Home)
@@ -143,4 +144,4 @@
 * **Palette Expansion**: Smooth accordion drop with slight spring curve (`cubic-bezier(0.16, 1, 0.3, 1)`).
 * **Page Turn / Swipe**: Fluid horizontal swipe transition simulating page leafing.
 * **Undo / Redo Haptic Feedback**: Visual pulse indicator on toolbar state change.
-* **PDF Export**: Uses the system document picker, writes A4 pages at 150 dpi, and keeps the existing paper, template and ink rendering.
+* **PDF Export**: Uses the system document picker, writes A4 pages at 150 dpi, and keeps the existing paper, template and ink rendering. The current page can be exported alone or shared as a PNG through the system share sheet.

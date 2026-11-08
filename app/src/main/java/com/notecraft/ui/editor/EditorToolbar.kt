@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.outlined.AutoFixNormal
 import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.Brush
@@ -116,6 +117,7 @@ private fun toolIcon(tool: ToolType): ImageVector = when (tool) {
     ToolType.TAPE -> Icons.Outlined.Layers
     ToolType.LASER -> Icons.Outlined.FlashOn
     ToolType.TEXT -> Icons.Outlined.TextFields
+    ToolType.STICKY -> Icons.AutoMirrored.Outlined.StickyNote2
     ToolType.LASSO -> Icons.Outlined.Gesture
 }
 
@@ -733,6 +735,13 @@ private fun ToolOptions(
             )
         }
 
+        if (editor.tool == ToolType.STICKY) {
+            ToolHintRow(
+                icon = Icons.AutoMirrored.Outlined.StickyNote2,
+                text = "Tap the page to add a note. Drag a note to move it; tap it to edit.",
+            )
+        }
+
         if (editor.tool == ToolType.SHAPE) {
             if (compact) {
                 Row(
@@ -875,6 +884,7 @@ private fun ToolHintRow(icon: ImageVector, text: String) {
 
 private fun sizeLabel(tool: ToolType): String = when (tool) {
     ToolType.TEXT -> "Text size"
+    ToolType.STICKY -> "Note size"
     ToolType.TAPE -> "Tape"
     ToolType.BRUSH_PEN -> "Brush"
     ToolType.FOUNTAIN_PEN -> "Nib"
@@ -883,6 +893,7 @@ private fun sizeLabel(tool: ToolType): String = when (tool) {
 
 private fun widthRange(tool: ToolType): ClosedFloatingPointRange<Float> = when (tool) {
     ToolType.TEXT -> 16f..96f
+    ToolType.STICKY -> 160f..420f
     ToolType.HIGHLIGHTER -> 8f..48f
     ToolType.ERASER -> 8f..60f
     ToolType.TAPE -> 10f..64f
@@ -907,7 +918,7 @@ private fun widthPresets(tool: ToolType): List<Float> {
     val range = widthRange(tool)
     val span = range.endInclusive - range.start
     val presets = listOf(0.16f, 0.42f, 0.78f).map { range.start + span * it }
-    return if (tool == ToolType.TEXT || tool == ToolType.ERASER) {
+    return if (tool == ToolType.TEXT || tool == ToolType.ERASER || tool == ToolType.STICKY) {
         presets.map { it.roundToInt().toFloat() }
     } else {
         presets.map { (it * 10f).roundToInt() / 10f }

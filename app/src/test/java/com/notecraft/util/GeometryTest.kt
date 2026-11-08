@@ -2,8 +2,11 @@ package com.notecraft.util
 
 import com.notecraft.model.Pt
 import com.notecraft.model.ShapeType
+import com.notecraft.model.StickyNote
 import com.notecraft.model.Stroke
+import com.notecraft.model.TextFormatting
 import com.notecraft.model.TextItem
+import com.notecraft.model.TextListStyle
 import com.notecraft.model.ToolType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -105,5 +108,51 @@ class GeometryTest {
 
         assertEquals(2f, text.approximateBounds().height / (text.fontSize * 1.28f), 0.001f)
         assertEquals(listOf("one", "two"), text.estimatedTextLines())
+    }
+
+    @Test
+    fun numberedListsDecorateOnlyNonBlankLines() {
+        val text = TextItem(
+            id = "numbered",
+            x = 0f,
+            y = 0f,
+            text = "one\n\ntwo",
+            color = 0xFF000000,
+            width = 300f,
+            formatting = TextFormatting(listStyle = TextListStyle.NUMBERED),
+        )
+
+        assertEquals("1.  one\n\n2.  two", text.displayText)
+    }
+
+    @Test
+    fun lineSpacingIncreasesTextHeight() {
+        val base = TextItem(
+            id = "base",
+            x = 0f,
+            y = 0f,
+            text = "one\ntwo",
+            color = 0xFF000000,
+            width = 300f,
+        )
+        val spaced = base.copy(formatting = TextFormatting(lineSpacing = 2f))
+
+        assertTrue(spaced.approximateBounds().height > base.approximateBounds().height)
+        assertEquals(2f, spaced.approximateBounds().height / base.approximateBounds().height, 0.001f)
+    }
+
+    @Test
+    fun stickyNoteHitTestUsesItsBox() {
+        val note = StickyNote(
+            id = "sticky",
+            x = 100f,
+            y = 200f,
+            width = 280f,
+            height = 200f,
+            text = "Remember this",
+        )
+
+        assertTrue(note.hitTest(150f, 250f))
+        assertTrue(!note.hitTest(500f, 500f))
     }
 }

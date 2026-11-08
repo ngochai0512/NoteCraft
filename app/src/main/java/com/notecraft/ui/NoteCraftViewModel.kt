@@ -18,8 +18,10 @@ import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.model.PageBackground
 import com.notecraft.model.ShapeType
+import com.notecraft.model.StickyNote
 import com.notecraft.model.Stroke
 import com.notecraft.model.TextAlignment
+import com.notecraft.model.TextFormatting
 import com.notecraft.model.TextItem
 import com.notecraft.model.ThemeMode
 import com.notecraft.model.ToolType
@@ -49,6 +51,7 @@ data class EditorState(
     val shapeType: ShapeType = ShapeType.LINE,
     val eraserMode: EraserMode = EraserMode.PARTIAL,
     val textAlignment: TextAlignment = TextAlignment.LEFT,
+    val textFormatting: TextFormatting = TextFormatting(),
     val recentColors: List<Long> = emptyList(),
     val selectedStrokeIds: Set<String> = emptySet(),
     val selectedTextIds: Set<String> = emptySet(),
@@ -82,6 +85,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     }.getOrDefault(EraserMode.PARTIAL)
     private val savedRecentColors: MutableList<Long> = loadRecentColors()
     private var textResizeBaseline: List<Page>? = null
+    private var stickyMoveBaseline: List<Page>? = null
 
     var settings by mutableStateOf(loadSettings())
         private set
@@ -126,6 +130,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         eraseBaseline = null
         selectionMoveBaseline = null
         textResizeBaseline = null
+        stickyMoveBaseline = null
         editor = EditorState(
             note = note,
             tool = settings.defaultTool,
@@ -148,6 +153,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         eraseBaseline = null
         selectionMoveBaseline = null
         textResizeBaseline = null
+        stickyMoveBaseline = null
     }
 
     fun deleteNote(noteId: String) {
@@ -342,6 +348,10 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         editor = editor?.copy(textAlignment = alignment)
     }
 
+    fun setTextFormatting(formatting: TextFormatting) {
+        editor = editor?.copy(textFormatting = formatting)
+    }
+
     fun setToolWidth(width: Float) {
         val current = editor ?: return
         val updated = current.toolWidths + (current.tool to width)
@@ -482,7 +492,9 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val page = current.note.pages[index]
         if (page.isEmpty) return
         commitPages { pages ->
-            pages.toMutableList().also { it[index] = it[index].copy(strokes = emptyList(), texts = emptyList()) }
+            pages.toMutableList().also {
+                it[index] = it[index].copy(strokes = emptyList(), texts = emptyList(), stickies = emptyList())
+            }
         }
         editor = editor?.copy(selectedStrokeIds = emptySet(), selectedTextIds = emptySet())
     }
@@ -520,10 +532,12 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         val textsToRemove = page.texts.filter { it.hitTest(x, y, radius) }.map { it.id }.toSet()
-        if (remainingStrokes == page.strokes && textsToRemove.isEmpty()) return
+        val stickiesToRemove = page.stickies.filter { it.hitTest(x, y, radius) }.map { it.id }.toSet()
+        if (remainingStrokes == page.strokes && textsToRemove.isEmpty() && stickiesToRemove.isEmpty()) return
         val updated = page.copy(
             strokes = remainingStrokes,
             texts = page.texts.filterNot { it.id in textsToRemove },
+            stickies = page.stickies.filterNot { it.id in stickiesToRemove },
         )
         replacePageWithoutHistory(index, updated)
     }
@@ -544,6 +558,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         color: Long,
         fontSize: Float,
         alignment: TextAlignment = TextAlignment.LEFT,
+        formatting: TextFormatting = TextFormatting(),
         pageIndexOverride: Int? = null,
     ) {
         if (text.isBlank()) return
@@ -558,6 +573,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             fontSize = fontSize,
             width = DefaultTextWidth,
             alignment = alignment,
+            formatting = formatting,
         )
         commitPages { pages ->
             pages.toMutableList().also {
@@ -566,7 +582,12 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun updateText(textId: String, text: String, alignment: TextAlignment? = null) {
+    fun updateText(
+        textId: String,
+        text: String,
+        alignment: TextAlignment? = null,
+        formatting: TextFormatting? = null,
+    ) {
         val current = editor ?: return
         val index = current.note.pages.indexOfFirst { page -> page.texts.any { it.id == textId } }
         if (index < 0) return
@@ -588,6 +609,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
                             item.copy(
                                 text = text,
                                 alignment = alignment ?: item.alignment,
+                                formatting = formatting ?: item.formatting,
                             )
                         } else {
                             item
@@ -629,6 +651,97 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun endTextResize() {
         val baseline = textResizeBaseline
         textResizeBaseline = null
+        if (baseline != null && editor?.note?.pages !== baseline) {
+            pushUndo(baseline)
+            syncHistoryFlags()
+        }
+    }
+
+    // ---------------------------------------------------------------- sticky notes
+
+    fun addSticky(
+        x: Float,
+        y: Float,
+        text: String,
+        color: Long,
+        width: Float,
+        pageIndexOverride: Int? = null,
+    ) {
+        if (text.isBlank()) return
+        val current = editor ?: return
+        val index = (pageIndexOverride ?: current.pageIndex).coerceIn(0, current.note.pages.lastIndex)
+        val noteWidth = width.coerceIn(160f, 420f)
+        val note = StickyNote(
+            id = newId(),
+            x = x,
+            y = y,
+            width = noteWidth,
+            height = noteWidth * 0.72f,
+            text = text,
+            color = color,
+        )
+        commitPages { pages ->
+            pages.toMutableList().also {
+                it[index] = it[index].copy(stickies = it[index].stickies + note)
+            }
+        }
+    }
+
+    fun updateSticky(stickyId: String, text: String) {
+        val current = editor ?: return
+        val index = current.note.pages.indexOfFirst { page -> page.stickies.any { it.id == stickyId } }
+        if (index < 0) return
+        if (text.isBlank()) {
+            commitPages { pages ->
+                pages.toMutableList().also {
+                    it[index] = it[index].copy(stickies = it[index].stickies.filterNot { note -> note.id == stickyId })
+                }
+            }
+            return
+        }
+        commitPages { pages ->
+            pages.toMutableList().also {
+                it[index] = it[index].copy(
+                    stickies = it[index].stickies.map { note ->
+                        if (note.id == stickyId) note.copy(text = text) else note
+                    },
+                )
+            }
+        }
+    }
+
+    fun deleteSticky(stickyId: String) {
+        val current = editor ?: return
+        val index = current.note.pages.indexOfFirst { page -> page.stickies.any { it.id == stickyId } }
+        if (index < 0) return
+        commitPages { pages ->
+            pages.toMutableList().also {
+                it[index] = it[index].copy(stickies = it[index].stickies.filterNot { note -> note.id == stickyId })
+            }
+        }
+    }
+
+    fun beginStickyMove() {
+        stickyMoveBaseline = editor?.note?.pages
+    }
+
+    fun moveSticky(stickyId: String, dx: Float, dy: Float) {
+        if (dx == 0f && dy == 0f) return
+        val current = editor ?: return
+        val index = current.note.pages.indexOfFirst { page -> page.stickies.any { it.id == stickyId } }
+        if (index < 0) return
+        val page = current.note.pages[index]
+        val updated = page.copy(
+            stickies = page.stickies.map { note ->
+                if (note.id == stickyId) note.copy(x = note.x + dx, y = note.y + dy) else note
+            },
+        )
+        replacePageWithoutHistory(index, updated)
+    }
+
+    fun endStickyMove() {
+        val baseline = stickyMoveBaseline
+        stickyMoveBaseline = null
         if (baseline != null && editor?.note?.pages !== baseline) {
             pushUndo(baseline)
             syncHistoryFlags()

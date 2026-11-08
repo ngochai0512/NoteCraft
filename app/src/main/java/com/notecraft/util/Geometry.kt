@@ -3,6 +3,7 @@ package com.notecraft.util
 import com.notecraft.model.Page
 import com.notecraft.model.Pt
 import com.notecraft.model.ShapeType
+import com.notecraft.model.StickyNote
 import com.notecraft.model.Stroke
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
@@ -231,7 +232,8 @@ fun TextItem.approximateBounds(): Bounds {
     val lines = estimatedTextLines()
     val maxChars = lines.maxOfOrNull { it.length } ?: 0
     val boxWidth = if (width > 0f) width else maxChars * fontSize * 0.56f
-    val height = max(lines.size, 1) * fontSize * 1.28f
+    val lineHeight = fontSize * 1.28f * formatting.lineSpacing.coerceIn(0.8f, 2f)
+    val height = max(lines.size, 1) * lineHeight
     return Bounds(x, y, x + boxWidth, y + height)
 }
 
@@ -240,7 +242,8 @@ fun TextItem.approximateBounds(): Bounds {
  * average glyph width, which is accurate enough for hit testing and selection bounds.
  */
 fun TextItem.estimatedTextLines(): List<String> {
-    val explicitLines = text.split('\n')
+    val rendered = displayText
+    val explicitLines = rendered.split('\n')
     if (width <= 0f) return explicitLines
     val maxChars = (width / (fontSize * 0.52f)).toInt().coerceAtLeast(1)
     return explicitLines.flatMap { line -> wrapLine(line, maxChars) }
@@ -295,6 +298,11 @@ fun TextItem.hitTest(x: Float, y: Float, extraRadius: Float): Boolean =
 
 fun TextItem.hitHandle(x: Float, y: Float, tolerance: Float): Boolean =
     resizeHandle(tolerance).contains(x, y)
+
+fun StickyNote.bounds(): Bounds = Bounds(x, y, x + width, y + height)
+
+fun StickyNote.hitTest(x: Float, y: Float, extraRadius: Float = 0f): Boolean =
+    bounds().expand(extraRadius).contains(x, y)
 
 fun selectionBounds(
     page: Page,

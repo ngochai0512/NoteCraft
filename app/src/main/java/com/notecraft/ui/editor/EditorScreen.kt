@@ -53,6 +53,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -94,6 +95,7 @@ import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.model.PersistentTools
+import com.notecraft.model.StickyNote
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.ui.NoteCraftViewModel
@@ -104,12 +106,18 @@ import com.notecraft.ui.components.TextEntryDialog
 import com.notecraft.ui.theme.HighlighterAmber
 import com.notecraft.ui.theme.MintGreen
 import com.notecraft.util.PdfExporter
+import com.notecraft.util.PageSharer
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private sealed interface TextDialogTarget {
     data class New(val point: Offset, val pageIndex: Int) : TextDialogTarget
     data class Edit(val item: TextItem) : TextDialogTarget
+}
+
+private sealed interface StickyDialogTarget {
+    data class New(val point: Offset, val pageIndex: Int) : StickyDialogTarget
+    data class Edit(val note: StickyNote) : StickyDialogTarget
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -124,10 +132,12 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
     var showDeleteNoteDialog by remember { mutableStateOf(false) }
     var showCoverDialog by remember { mutableStateOf(false) }
     var textDialogTarget by remember { mutableStateOf<TextDialogTarget?>(null) }
+    var stickyDialogTarget by remember { mutableStateOf<StickyDialogTarget?>(null) }
     var showPageDrawer by remember { mutableStateOf(false) }
     var expandedTool by remember { mutableStateOf<ToolType?>(null) }
     var showToolMenu by remember { mutableStateOf(false) }
     var exportNote by remember { mutableStateOf<Note?>(null) }
+    var exportPage by remember { mutableStateOf<Page?>(null) }
     val pageSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -145,6 +155,20 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
             }
         }
         exportNote = null
+    }
+    val pageExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf"),
+    ) { uri ->
+        val page = exportPage
+        if (uri != null && page != null) {
+            Toast.makeText(context, "Exporting page…", Toast.LENGTH_SHORT).show()
+            scope.launch {
+                runCatching { PdfExporter.exportPage(context, uri, page) }
+                    .onSuccess { Toast.makeText(context, "Page exported", Toast.LENGTH_SHORT).show() }
+                    .onFailure { Toast.makeText(context, "Could not export page", Toast.LENGTH_SHORT).show() }
+            }
+        }
+        exportPage = null
     }
 
     val configuration = LocalConfiguration.current
@@ -173,6 +197,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
         showDeleteNoteDialog ||
         showCoverDialog ||
         textDialogTarget != null ||
+        stickyDialogTarget != null ||
         showPageDrawer ||
         showMenu ||
         showToolMenu ||
@@ -369,6 +394,39 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
+                                text = { Text("Export current page") },
+                                leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    exportPage = editor.page
+                                    val pageNumber = editor.pageIndex + 1
+                                    pageExportLauncher.launch(
+                                        PdfExporter.pageFileName(editor.note.title, pageNumber),
+                                    )
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share current page") },
+                                leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    scope.launch {
+                                        PageSharer.sharePage(
+                                            context = context,
+                                            page = editor.page,
+                                            noteTitle = editor.note.title,
+                                            pageNumber = editor.pageIndex + 1,
+                                        ).onFailure {
+                                            Toast.makeText(
+                                                context,
+                                                "Could not share page",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    }
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Export PDF") },
                                 leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
                                 onClick = {
@@ -491,6 +549,13 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     onTextResizeStart = viewModel::beginTextResize,
                     onTextResize = { id, newWidth -> viewModel.resizeText(id, newWidth) },
                     onTextResizeEnd = viewModel::endTextResize,
+                    onAddSticky = { point, targetPage ->
+                        stickyDialogTarget = StickyDialogTarget.New(point, targetPage)
+                    },
+                    onEditSticky = { note -> stickyDialogTarget = StickyDialogTarget.Edit(note) },
+                    onStickyMoveStart = viewModel::beginStickyMove,
+                    onStickyMove = { id, delta -> viewModel.moveSticky(id, delta.x, delta.y) },
+                    onStickyMoveEnd = viewModel::endStickyMove,
                     onShowPages = { showPageDrawer = true },
                     onShowPageBackground = { showBackgroundDialog = true },
                     modifier = Modifier.fillMaxSize(),
@@ -611,6 +676,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 supportingText = "Text wraps in its box. Tap it later with the Text tool to edit or drag the corner to resize.",
                 alignment = editor.textAlignment,
                 onAlignmentChange = viewModel::setTextAlignment,
+                formatting = editor.textFormatting,
+                onFormattingChange = viewModel::setTextFormatting,
                 onDismiss = { textDialogTarget = null },
                 onConfirm = { text ->
                     viewModel.addText(
@@ -620,6 +687,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                         editor.color,
                         editor.width,
                         alignment = editor.textAlignment,
+                        formatting = editor.textFormatting,
                         pageIndexOverride = target.pageIndex,
                     )
                     textDialogTarget = null
@@ -640,10 +708,65 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 onAlignmentChange = { alignment ->
                     textDialogTarget = TextDialogTarget.Edit(target.item.copy(alignment = alignment))
                 },
+                formatting = target.item.formatting,
+                onFormattingChange = { formatting ->
+                    textDialogTarget = TextDialogTarget.Edit(target.item.copy(formatting = formatting))
+                },
                 onDismiss = { textDialogTarget = null },
                 onConfirm = { text ->
-                    viewModel.updateText(target.item.id, text, target.item.alignment)
+                    viewModel.updateText(
+                        target.item.id,
+                        text,
+                        target.item.alignment,
+                        target.item.formatting,
+                    )
                     textDialogTarget = null
+                },
+            )
+        }
+
+        null -> Unit
+    }
+
+    when (val target = stickyDialogTarget) {
+        is StickyDialogTarget.New -> {
+            TextEntryDialog(
+                title = "Add sticky note",
+                initialValue = "",
+                label = "Note",
+                confirmLabel = "Add",
+                allowEmpty = false,
+                minLines = 3,
+                maxLines = 8,
+                supportingText = "Drag the note with the Sticky tool to move it. The eraser removes it whole.",
+                onDismiss = { stickyDialogTarget = null },
+                onConfirm = { text ->
+                    viewModel.addSticky(
+                        x = target.point.x,
+                        y = target.point.y,
+                        text = text,
+                        color = editor.color,
+                        width = editor.width,
+                        pageIndexOverride = target.pageIndex,
+                    )
+                    stickyDialogTarget = null
+                },
+            )
+        }
+
+        is StickyDialogTarget.Edit -> {
+            TextEntryDialog(
+                title = "Edit sticky note",
+                initialValue = target.note.text,
+                label = "Note",
+                allowEmpty = true,
+                minLines = 3,
+                maxLines = 8,
+                supportingText = "Save an empty note to remove it.",
+                onDismiss = { stickyDialogTarget = null },
+                onConfirm = { text ->
+                    viewModel.updateSticky(target.note.id, text)
+                    stickyDialogTarget = null
                 },
             )
         }

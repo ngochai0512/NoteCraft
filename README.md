@@ -24,7 +24,8 @@ UI: Jetpack Compose + Material 3
 - **Tape** — translucent washi-style strip for covering and decorating
 - **Laser pointer** — a red trail that fades when you lift your finger
 - **Pencil** — textured graphite line
-- **Text** — resizable typed text boxes with wrapping, left/center/right alignment, and edit-in-place
+- **Text** — resizable typed text boxes with wrapping, left/center/right alignment, bold/italic/underline, bullet/numbered lists, line spacing, highlight, and edit-in-place
+- **Sticky notes** — lightweight colored callouts with wrapped text; tap to add, drag to move, tap to edit
 - **Lasso** — select strokes and text to move, duplicate or delete
 - **Ruler** — toggle a draggable straight-edge guide; strokes started near it snap to a straight line
 
@@ -56,6 +57,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Notebook covers with spine crease, ribbon bookmark and label badge
 - Cover-tone chooser in the library menu and editor, with an automatic default
 - Export a notebook to PDF through the system document picker
+- Export the current page as PDF or share it as a PNG through the Android share sheet
 - Search notes by title
 - Sort by recently updated, recently created, or title
 - Adaptive grid that shows more columns on larger screens
@@ -176,7 +178,11 @@ Update that path if the SDK is installed elsewhere.
 | Zoom | Pinch with two fingers, or use the canvas zoom buttons |
 | Add text | Text tool → tap an empty spot on the page |
 | Edit text | Text tool → tap existing text |
+| Format text | Text dialog → style, list, line-spacing, and highlight controls |
 | Resize text box | Text tool → drag the box's bottom-right handle |
+| Add sticky note | Sticky tool → tap an empty spot |
+| Move sticky note | Sticky tool → drag the note |
+| Edit sticky note | Sticky tool → tap the note |
 | Bookmark a page | Open the page drawer and tap its star, or use the editor menu |
 | Reorder pages | Open the page drawer, long-press a thumbnail, and drag it |
 | Change page | Use the previous/next arrows, or open the page-thumbnail drawer from the zoom controls |
@@ -194,8 +200,9 @@ app/src/main/
 │   ├── data/
 │   │   └── NoteRepository.kt         # JSON file persistence
 │   ├── util/
-│   │   ├── Geometry.kt               # Hit tests, partial eraser, lasso, bounds
-│   │   ├── PdfExporter.kt            # Notebook-to-PDF rendering
+│   │   ├── Geometry.kt               # Hit tests, partial eraser, lasso, text, sticky bounds
+│   │   ├── PdfExporter.kt            # Notebook and page-to-PDF rendering
+│   │   ├── PageSharer.kt             # PNG page rendering and Android share sheet
 │   │   └── Format.kt                 # Relative note dates
 │   └── ui/
 │       ├── NoteCraftApp.kt           # Library ↔ editor navigation
@@ -227,7 +234,7 @@ Each note is a JSON file at:
 filesDir/notes/<note-id>.json
 ```
 
-Notes contain pages, and each page contains strokes and text items. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
+Notes contain pages, and each page contains strokes, text items, and sticky notes. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
 
 A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A note may store `pinned` to keep it above unpinned notebooks in the library. A page may also store `bookmarked`. A stroke saves:
 
@@ -238,7 +245,9 @@ A note also stores an optional `coverTone` name; when absent, the library derive
 - Optional shape type
 - A seed for deterministic pencil texture
 
-A text item stores its position, text, color, font size, optional `width` in page units, and an optional `alignment` (`LEFT`, `CENTER`, `RIGHT`). Missing width means a legacy auto-width box that only breaks on explicit newlines; new text boxes wrap inside their stored width.
+A text item stores its position, text, color, font size, optional `width` in page units, and an optional `alignment` (`LEFT`, `CENTER`, `RIGHT`). It may also store `bold`, `italic`, `underline`, `listStyle` (`BULLET` or `NUMBERED`), `lineSpacing`, and `highlightColor`. Missing width means a legacy auto-width box that only breaks on explicit newlines; new text boxes wrap inside their stored width.
+
+A sticky note stores its position, size, text, color, and font size. It renders as a colored card above ink and text and is included in PDF export and page sharing.
 
 Saving is debounced while editing, then flushed when the editor closes or the app goes to the background.
 
@@ -252,6 +261,7 @@ Saving is debounced while editing, then flushed when the editor closes or the ap
 - **Tool preferences** are stored in `SharedPreferences` under `notecraft_tool_prefs`, including recently used colors and the eraser mode.
 - **App preferences** (theme, default tool, default paper, autosave indicator, stylus-only mode) are stored under `notecraft_settings`.
 - **PDF export** rasterizes each page through the same renderer at 150 dpi and writes an A4 PDF selected with the system document picker.
+- **Page sharing** rasterizes the current page to a PNG in app cache and launches the Android share sheet through `FileProvider`.
 - **Ink authoring** uses `androidx.ink:ink-authoring-compose` for fountain, ball, brush, and highlighter tools. Wet strokes are rendered by `InProgressStrokes`; finished strokes are converted to immutable NoteCraft strokes and handed to the existing page state, so the downstream canvas, persistence, history, eraser, and lasso remain the source of truth.
 - **Native Ink** requires the Ink native loader libraries, which are packaged for all supported ABIs in the APK.
 
@@ -261,12 +271,14 @@ This is intentionally a compact version of a full note-taking app:
 
 - The eraser removes the touched portion of a stroke (Partial) or the whole stroke (Object) rather than individual pixels; shapes and text are removed whole.
 - Text boxes wrap at their stored width, but height is automatic; there is no vertical box constraint.
+- Sticky notes are moved and edited directly with the Sticky tool; they are not part of lasso selection.
+- Page export and sharing work on the current page only; whole-notebook export remains PDF.
 - Undo history lasts for the current app session only.
 - Notes are local to the device; there is no sync, cloud backup, or import yet. PDF export is available.
 - Pages are navigated with the page controls and thumbnail drawer rather than a continuous swipe canvas; tablets in landscape show a two-page spread.
 - Media insertion and collaboration are not implemented yet.
 - Ink is used for authoring and wet rendering; dry strokes still use NoteCraft's renderer, so wet and dry Ink strokes can differ slightly.
-- Pencil, shape, tape, laser, text, and lasso interactions remain custom.
+- Pencil, shape, tape, laser, text, sticky notes, and lasso interactions remain custom.
 - The two-page spread is tablet-landscape only; stylus-only mode uses the custom renderer instead of the Ink overlay.
 
 ## Design system
