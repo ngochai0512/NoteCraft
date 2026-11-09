@@ -46,12 +46,18 @@ Do not answer from memory or guess APIs. Read the files that own the behavior yo
 If code and documentation disagree, say so and resolve it deliberately rather than silently picking
 one.
 
+For general Android/Kotlin/Compose/Material 3 questions, consult the personal
+`android-native-dev` skill at `/Users/ngochai/Desktop/android-native-dev/SKILL.md` and its
+`references/`. It lives outside this repo and is never committed. Where it conflicts with this
+file, this file wins: pinned versions (no BOM), single Gradle module, no flavors/`BuildConfig`,
+no navigation library, no network/database/DI.
+
 ## 3. Build, install, verify
 
 Use the project wrapper and Android Studio's bundled JDK:
 
 ```bash
-cd /Users/ngochai/Desktop/NoteCraft-Group-Project
+cd /Users/ngochai/Desktop/NoteCraft
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:assembleDebug
 ```
@@ -85,8 +91,14 @@ Available AVDs in this environment may include `Pixel_10_Pro_XL` and `Pixel_Tabl
 auto-rotate to test portrait and landscape; the app declares `fullUser` orientation.
 
 Pure logic tests live under `app/src/test/java` (currently `GeometryTest.kt` for the partial
-eraser). Run them with `./gradlew :app:testDebugUnitTest --offline`. UI tests are not set up yet.
+eraser). Run them with `./gradlew :app:testDebugUnitTest --offline`. Run a single class while
+iterating with `./gradlew :app:testDebugUnitTest --tests "com.notecraft.util.GeometryTest" --offline`.
+UI tests are not set up yet; do not add instrumentation or Robolectric dependencies without approval.
 Do not claim runtime verification unless you ran the app on a device or emulator.
+
+Build-failure triage order: read the full error (file + line) → check the most recent diff →
+`./gradlew clean :app:assembleDebug --offline` → `./gradlew :app:dependencies` for conflicts →
+rerun with `--stacktrace`.
 
 - Treat warnings as signal. Do not introduce new compiler or lint warnings; fix warnings you create.
 - If a build or test fails, investigate the failure itself. Do not delete, skip, or weaken a test to
@@ -204,6 +216,11 @@ Key rules:
   documented design token.
 - Sizes in `dp`, text in `sp`. Keep touch targets at least ~48×48 dp. Use `maxLines` + ellipsis for
   variable text.
+- Follow the skill's numeric UI checks by reference (`android-native-dev/SKILL.md` §7): 8dp spacing
+  grid, 4.5:1 body-text / 3:1 large-text and component contrast, 100–500ms animation buckets.
+  Touch targets, dark theme, and `contentDescription` on interactive elements are hard requirements,
+  not nice-to-haves. Never put the element type in an accessibility label (e.g. "Save", not
+  "Save button").
 - Responsive breakpoints currently used:
   - tablet: `smallestScreenWidthDp >= 600`
   - compact height: `screenHeightDp < 480`
@@ -219,6 +236,9 @@ Key rules:
   `res/values/strings.xml` instead of duplicating literals.
 - Material icons come from `material-icons-extended`. The adaptive launcher and round icons are
   already configured; do not replace branding without asking.
+- Resource naming follows the skill (`ic_`/`img_`/`bg_` prefixes). Never use Android reserved names
+  for resources, colors, or IDs (`background`, `icon`, `view`, `text`, `button`, `layout`, etc.);
+  they cause build errors or resource conflicts.
 
 ## 9. Interaction rules
 
@@ -267,6 +287,19 @@ Key rules:
 - Avoid `GlobalScope` and blocking IO on the main thread. Never swallow errors silently: an empty
   `catch`, unexplained `runCatching`, or suppressed error needs a one-line justification. Handle,
   log with enough context to reproduce, or propagate failures; keep the Ink fallback/logging intact.
+- Never use `!!`; prefer safe calls with defaults (`user?.name ?: "Unknown"`) or `let` handling.
+  In lambdas, use labeled returns (`return@forEach`), never a bare `return` that escapes the outer
+  function. Avoid `lateinit` for state that may be read before init; prefer nullable or defaulted
+  values.
+- Threading: UI/state updates on `Dispatchers.Main`, file IO and repository work on
+  `Dispatchers.IO`, heavy compute (parsing, sorting) on `Dispatchers.Default`. Suspend functions in
+  the repository must be main-safe (`withContext(Dispatchers.IO)` inside). Never update Compose
+  state from an IO thread.
+- Logging levels: `Log.i` for key flow checkpoints, `Log.w` for recoverable/fallback situations,
+  `Log.e` for failures — always with a TAG and enough context (what operation, what input).
+- Compose rules (from the skill): only call `@Composable` from `@Composable` scope; side effects go
+  in `LaunchedEffect`, never bare suspend calls in composition; use `derivedStateOf` for derived
+  values; never construct a ViewModel inside a composable (use parameters/`remember`).
 - User-facing failures should show a human-readable message, not a raw exception.
 - Prefer multi-line Compose modifier chains and readable blocks. One-line code is fine only for
   simple lambdas, accessors, and single expressions; never compress multiple statements, modifier
@@ -316,6 +349,8 @@ Before reporting a task complete, confirm all of the following:
   setup, or a rule changes.
 - [ ] No dependency was added without approval.
 - [ ] No deprecated API was introduced (see section 10).
+- [ ] No skill anti-patterns introduced: touch targets ≥ 48dp, 8dp-grid spacing, contrast ratios,
+  dark-theme support, `contentDescription` on interactive elements.
 - [ ] State clearly what was verified and what was not. Never claim a runtime check without a device
   or emulator.
 
@@ -357,6 +392,8 @@ existing model over speculative abstractions.
   separate from feature work; do not bundle unrelated fixes, formatting, and features in one diff.
 - Do not commit or push unless the user asks.
 - Never commit `local.properties`, `.idea/`, build outputs, APKs/AABs, `.gradle/`, or `.DS_Store`.
+- The `android-native-dev` skill lives outside this repo and is never committed. Nothing in the
+  build may depend on it being present.
 - Update `README.md` and `DESIGN.md` when behavior, persistence, canvas rules, orientation, or
   cutout behavior changes.
 - Update this file deliberately when a rule is wrong or repeatedly causes trouble.
