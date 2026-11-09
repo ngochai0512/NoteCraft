@@ -116,9 +116,10 @@ private val InkToolTypes = setOf(
 
 @Composable
 fun DrawingCanvas(
-    page: Page,
-    secondPage: Page? = null,
-    pageIndex: Int = 0,
+    pages: List<Page>,
+    pageIndex: Int,
+    noteId: String,
+    scrollRequest: Int,
     tool: ToolType,
     color: Long,
     width: Float,
@@ -127,6 +128,7 @@ fun DrawingCanvas(
     selectedStrokeIds: Set<String>,
     selectedTextIds: Set<String>,
     selectionPageIndex: Int,
+    onVisiblePageChanged: (Int) -> Unit,
     onStrokeCommitted: (InkStroke, Int) -> Unit,
     onEraseStart: () -> Unit,
     onEraseMove: (Offset, Int) -> Unit,
@@ -152,8 +154,7 @@ fun DrawingCanvas(
     val configuration = LocalConfiguration.current
     val compactHeight = configuration.screenHeightDp < 480
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    val isSpread = secondPage != null
-    val viewport = remember(page.id, secondPage?.id) { CanvasViewport() }
+    val viewport = remember(noteId) { CanvasViewport() }
     var previewStroke by remember { mutableStateOf<InkStroke?>(null) }
     var lassoPreview by remember { mutableStateOf<List<Pt>>(emptyList()) }
     var laserPoints by remember { mutableStateOf<List<Pt>>(emptyList()) }
@@ -164,9 +165,10 @@ fun DrawingCanvas(
     var gesturePage by remember { mutableIntStateOf(pageIndex) }
     val inkTargetPage = remember { intArrayOf(pageIndex) }
     val inkOrigin = remember { arrayOf(Offset.Zero) }
+    val lastVisiblePage = remember(noteId) { intArrayOf(pageIndex) }
 
-    val currentPage by rememberUpdatedState(page)
-    val currentSecondPage by rememberUpdatedState(secondPage)
+    val currentPages by rememberUpdatedState(pages)
+    val visiblePageChanged by rememberUpdatedState(onVisiblePageChanged)
     val currentSelectedStrokes by rememberUpdatedState(selectedStrokeIds)
     val currentSelectedTexts by rememberUpdatedState(selectedTextIds)
     val currentSelectionPage by rememberUpdatedState(selectionPageIndex)
@@ -189,12 +191,12 @@ fun DrawingCanvas(
     val stickyMove by rememberUpdatedState(onStickyMove)
     val stickyMoveEnd by rememberUpdatedState(onStickyMoveEnd)
 
-    LaunchedEffect(page.id, secondPage?.id) {
+    LaunchedEffect(noteId) {
         viewport.zoom = 1f
         viewport.pan = Offset.Zero
     }
 
-    LaunchedEffect(page.id, secondPage?.id, tool) {
+    LaunchedEffect(noteId, pages.size, tool) {
         previewStroke = null
         lassoPreview = emptyList()
         laserPoints = emptyList()
@@ -208,22 +210,18 @@ fun DrawingCanvas(
         }
     }
 
-    fun pageFor(index: Int): Page {
-        if (index == 1) return currentSecondPage ?: currentPage
-        return currentPage
-    }
-
-    fun totalPageWidth(): Float = if (isSpread) PAGE_WIDTH * 2f + SpreadGap else PAGE_WIDTH
+    fun pageFor(index: Int): Page =
+        currentPages.getOrElse(index) { currentPages.last() }
 
     fun baseScale(size: IntSize): Float {
         if (size.width == 0 || size.height == 0) return 1f
-        return min(size.width / totalPageWidth(), size.height / PAGE_HEIGHT)
+        return min(size.width / PAGE_WIDTH, size.height / PAGE_HEIGHT)
     }
 
     fun currentTransform(): CanvasTransform {
         val scale = baseScale(canvasSize) * viewport.zoom
         val origin = Offset(
-            (canvasSize.width - totalPageWidth() * scale) / 2f + viewport.pan.x,
+            (canvasSize.width - PAGE_WIDTH * scale) / 2f + viewport.pan.x,
             (canvasSize.height - PAGE_HEIGHT * scale) / 2f + viewport.pan.y,
         )
         return CanvasTransform(scale, origin)
@@ -232,8 +230,8 @@ fun DrawingCanvas(
     fun pageOriginFor(index: Int): Offset {
         val transform = currentTransform()
         return Offset(
-            transform.origin.x + index * (PAGE_WIDTH + SpreadGap) * transform.scale,
-            transform.origin.y,
+            transform.origin.x,
+            transform.origin.y + index * (PAGE_HEIGHT + PageGap) * transform.scale,
         )
     }
 
@@ -242,11 +240,26 @@ fun DrawingCanvas(
         if (transform.scale <= 0f) return 0 to Offset.Zero
         val rawX = (position.x - transform.origin.x) / transform.scale
         val rawY = (position.y - transform.origin.y) / transform.scale
-        if (!isSpread) return 0 to Offset(rawX, rawY)
-        val secondStart = PAGE_WIDTH + SpreadGap / 2f
-        val index = if (rawX >= secondStart) 1 else 0
-        val localX = rawX - index * (PAGE_WIDTH + SpreadGap)
-        return index to Offset(localX, rawY)
+        val index = (rawY / (PAGE_HEIGHT + PageGap)).toInt()
+            .coerceIn(0, currentPages.lastIndex.coerceAtLeast(0))
+        val localY = rawY - index * (PAGE_HEIGHT + PageGap)
+        return index to Offset(rawX, localY)
+    }
+
+    fun visiblePageIndex(): Int {
+        val transform = currentTransform()
+        if (transform.scale <= 0f || currentPages.isEmpty()) return 0
+        val rawY = (canvasSize.height / 2f - transform.origin.y) / transform.scale
+        return (rawY / (PAGE_HEIGHT + PageGap)).toInt()
+            .coerceIn(0, currentPages.lastIndex)
+    }
+
+    fun notifyVisiblePage() {
+        val visible = visiblePageIndex()
+        if (visible != lastVisiblePage[0]) {
+            lastVisiblePage[0] = visible
+            visiblePageChanged(visible)
+        }
     }
 
     fun rulerScreenY(): Float = canvasSize.height * rulerFraction
@@ -288,13 +301,13 @@ fun DrawingCanvas(
         val focusInPage = (previousFocus - transform.origin) / transform.scale
         val newZoom = (viewport.zoom * zoomChange).coerceIn(1f, 8f)
         val newScale = baseScale(canvasSize) * newZoom
-        val totalWidth = totalPageWidth()
         val candidate = Offset(
-            focus.x - focusInPage.x * newScale - (canvasSize.width - totalWidth * newScale) / 2f,
+            focus.x - focusInPage.x * newScale - (canvasSize.width - PAGE_WIDTH * newScale) / 2f,
             focus.y - focusInPage.y * newScale - (canvasSize.height - PAGE_HEIGHT * newScale) / 2f,
         )
         viewport.zoom = newZoom
         viewport.pan = candidate
+        notifyVisiblePage()
     }
 
     fun zoomBy(factor: Float) {
@@ -309,6 +322,22 @@ fun DrawingCanvas(
     fun resetViewport() {
         viewport.zoom = 1f
         viewport.pan = Offset.Zero
+        notifyVisiblePage()
+    }
+
+    LaunchedEffect(scrollRequest, noteId, canvasSize) {
+        if (canvasSize.height == 0 || currentPages.isEmpty()) {
+            return@LaunchedEffect
+        }
+        val target = pageIndex.coerceIn(0, currentPages.lastIndex)
+        val transform = currentTransform()
+        if (transform.scale <= 0f) return@LaunchedEffect
+        viewport.pan = Offset(
+            viewport.pan.x,
+            -target * (PAGE_HEIGHT + PageGap) * transform.scale,
+        )
+        lastVisiblePage[0] = target
+        visiblePageChanged(target)
     }
 
     val hintBackground = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
@@ -363,18 +392,14 @@ fun DrawingCanvas(
                 .fillMaxSize()
                 .pointerInput(
                     tool,
-                    page.id,
-                    secondPage?.id,
+                    noteId,
+                    pages.size,
                     color,
                     width,
                     shapeType,
-                    selectedStrokeIds,
-                    selectedTextIds,
-                    selectionPageIndex,
                     stylusOnly,
                     rulerEnabled,
                     rulerAngle,
-                    isSpread,
                 ) {
                     val touchSlop = viewConfiguration.touchSlop
                     val handleTolerance = 22.dp.toPx()
@@ -395,6 +420,10 @@ fun DrawingCanvas(
                         val (targetIndex, downPage) = pageAt(down.position)
                         val targetPage = pageFor(targetIndex)
                         gesturePage = targetIndex
+                        if (targetIndex != lastVisiblePage[0]) {
+                            lastVisiblePage[0] = targetIndex
+                            visiblePageChanged(targetIndex)
+                        }
 
                         if (effectiveInk) {
                             if (!stylusOnly || downIsStylus) {
@@ -768,60 +797,50 @@ fun DrawingCanvas(
 
             val transform = currentTransform()
             if (transform.scale > 0f) {
-                val leftOrigin = pageOriginFor(0)
-                drawPageBackground(
-                    background = page.background,
-                    scale = transform.scale,
-                    origin = leftOrigin,
-                    left = 0f,
-                    top = 0f,
-                    right = size.width,
-                    bottom = size.height,
-                )
-                if (secondPage != null) {
-                    val rightOrigin = pageOriginFor(1)
+                val pageHeightPx = PAGE_HEIGHT * transform.scale
+                currentPages.forEachIndexed { index, item ->
+                    val pageOrigin = pageOriginFor(index)
+                    if (pageOrigin.y > size.height || pageOrigin.y + pageHeightPx < 0f) {
+                        return@forEachIndexed
+                    }
                     drawPageBackground(
-                        background = secondPage.background,
+                        background = item.background,
                         scale = transform.scale,
-                        origin = rightOrigin,
-                        left = rightOrigin.x,
-                        top = rightOrigin.y,
-                        right = rightOrigin.x + PAGE_WIDTH * transform.scale,
-                        bottom = rightOrigin.y + PAGE_HEIGHT * transform.scale,
+                        origin = pageOrigin,
+                        left = pageOrigin.x,
+                        top = pageOrigin.y,
+                        right = pageOrigin.x + PAGE_WIDTH * transform.scale,
+                        bottom = pageOrigin.y + pageHeightPx,
                     )
-                    drawLine(
-                        color = Color(0xFF94A3B8).copy(alpha = 0.35f),
-                        start = Offset(rightOrigin.x, rightOrigin.y),
-                        end = Offset(rightOrigin.x, rightOrigin.y + PAGE_HEIGHT * transform.scale),
-                        strokeWidth = 1.5f,
-                    )
-                }
-
-                val pages = if (secondPage != null) listOf(page, secondPage) else listOf(page)
-                pages.forEachIndexed { index, item ->
                     drawPageContent(
                         page = item,
                         scale = transform.scale,
-                        origin = pageOriginFor(index),
+                        origin = pageOrigin,
                         selectedStrokeIds = selectedStrokeIds,
                         selectedTextIds = selectedTextIds,
                         drawSelection = true,
                         drawPaper = false,
                         drawBackground = false,
-                        clip = false,
+                        clip = true,
                     )
                 }
 
                 if (tool == ToolType.TEXT) {
-                    pages.forEachIndexed { index, item ->
+                    currentPages.forEachIndexed { index, item ->
                         val pageOrigin = pageOriginFor(index)
+                        if (pageOrigin.y > size.height || pageOrigin.y + pageHeightPx < 0f) {
+                            return@forEachIndexed
+                        }
                         item.texts.forEach { text -> drawTextFrame(text, transform.scale, pageOrigin) }
                     }
                 }
 
                 if (tool == ToolType.STICKY) {
-                    pages.forEachIndexed { index, item ->
+                    currentPages.forEachIndexed { index, item ->
                         val pageOrigin = pageOriginFor(index)
+                        if (pageOrigin.y > size.height || pageOrigin.y + pageHeightPx < 0f) {
+                            return@forEachIndexed
+                        }
                         item.stickies.forEach { note -> drawStickyFrame(note, transform.scale, pageOrigin) }
                     }
                 }
@@ -1057,7 +1076,7 @@ fun DrawingCanvas(
     }
 }
 
-private const val SpreadGap = 28f
+private const val PageGap = 36f
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRulerGuide(
     pivot: Offset,

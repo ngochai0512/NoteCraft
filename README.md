@@ -50,8 +50,8 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Add, duplicate, delete, and reorder pages by long-pressing a page thumbnail and dragging it
 - Star a page as a bookmark; the star is shown on its page-drawer thumbnail
 - Page backgrounds: blank, ruled, squared graph, dotted, Cornell, daily planner, weekly planner, music staff, storyboard and checklist
-- Compact page navigator with previous/next controls
-- Two-page spread on tablets in landscape, with the left page as the current page and both pages editable
+- Continuous vertical page scrolling with a passive page indicator; no previous/next arrows
+- Two-finger drag scrolls through pages; the page drawer jumps directly to a page
 - Page thumbnail drawer accessible from the zoom controls, with a quick add-page tile
 - Live notebook-cover previews in the library
 - Notebook covers with spine crease, ribbon bookmark and label badge
@@ -150,7 +150,7 @@ Simulate a cutout on an emulator or device with Developer options:
 adb shell cmd overlay enable com.android.internal.display.cutout.emulation.tall
 ```
 
-Rotate to landscape and check that the top bar, tool ribbon, zoom controls, page navigator, sheets, and library grid stay clear of the cutout while the editor paper remains edge-to-edge. Disable it with:
+Rotate to landscape and check that the top bar, tool ribbon, zoom controls, page indicator, sheets, and library grid stay clear of the cutout while the editor paper remains edge-to-edge. Disable it with:
 
 ```bash
 adb shell cmd overlay disable com.android.internal.display.cutout.emulation.tall
@@ -185,7 +185,7 @@ Update that path if the SDK is installed elsewhere.
 | Edit sticky note | Sticky tool → tap the note |
 | Bookmark a page | Open the page drawer and tap its star, or use the editor menu |
 | Reorder pages | Open the page drawer, long-press a thumbnail, and drag it |
-| Change page | Use the previous/next arrows, or open the page-thumbnail drawer from the zoom controls |
+| Change page | Scroll vertically with two fingers, or open the page-thumbnail drawer from the zoom controls |
 | Add a page | Open the page-thumbnail drawer from the zoom controls and tap **Add page** |
 
 ## Project structure
@@ -275,11 +275,11 @@ This is intentionally a compact version of a full note-taking app:
 - Page export and sharing work on the current page only; whole-notebook export remains PDF.
 - Undo history lasts for the current app session only.
 - Notes are local to the device; there is no sync, cloud backup, or import yet. PDF export is available.
-- Pages are navigated with the page controls and thumbnail drawer rather than a continuous swipe canvas; tablets in landscape show a two-page spread.
+- Continuous vertical scrolling uses a two-finger drag so one-finger drawing stays untouched; there are no previous/next buttons.
 - Media insertion and collaboration are not implemented yet.
 - Ink is used for authoring and wet rendering; dry strokes still use NoteCraft's renderer, so wet and dry Ink strokes can differ slightly.
 - Pencil, shape, tape, laser, text, sticky notes, and lasso interactions remain custom.
-- The two-page spread is tablet-landscape only; stylus-only mode uses the custom renderer instead of the Ink overlay.
+- Stylus-only mode uses the custom renderer instead of the Ink overlay.
 
 ## Design system
 

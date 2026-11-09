@@ -153,10 +153,9 @@ included in thumbnails, PDF export, and page sharing.
 
 Key rules:
 
-- **Paper is full-bleed.** `drawPaperSurface()` fills the viewport and `drawPageBackground(...)`
-  accepts explicit canvas bounds. Do not reintroduce the desk gradient, page drop shadow, rounded
-  sheet, page border, or page-shaped `clipRect`. Patterns stay anchored to the page origin so they
-  pan and zoom with the page while covering the screen.
+- **Paper stays borderless.** `drawPaperSurface()` fills the viewport. In the vertical page stack,
+  each page's background is drawn inside its own page bounds, separated by the page gap. Do not
+  reintroduce the desk gradient, page drop shadow, rounded sheet, or page border.
 - Paper templates are BLANK, LINED, GRID, DOTTED, CORNELL, PLANNER, WEEKLY, MUSIC, STORYBOARD and
   CHECKLIST. The editor renders template structures inside the page bounds; the picker preview in
   `EditorDialogs.kt` must stay exhaustive when a template is added.
@@ -172,9 +171,10 @@ Key rules:
 - Ruler mode and stylus-only mode intentionally use the custom path (snapped points and pointer
   types must be controlled before authoring). Do not route them through Ink without solving
   snapping and finger filtering first.
-- `secondPage` on `DrawingCanvas` enables the tablet-landscape two-page spread. The left page is
-  the ViewModel's `pageIndex`; the right page is `pageIndex + 1`. Gestures pass a target page index
-  to the ViewModel, so both pages are editable without changing the current page mid-gesture.
+- Pages are rendered as one vertical stack in `DrawingCanvas`. `pageIndex` follows the page at the
+  viewport center; drawing gestures pass their target page index so any visible page is editable.
+  Two-finger pan scrolls/zooms; there are no previous/next page buttons. A page-drawer selection
+  uses `scrollRequest` to snap the stack to that page.
 - Pencil, shapes, tape, laser, text, and lasso remain custom. Do not route them through Ink.
 - Gesture handoff is deliberate: one finger draws (or erases/selects), two fingers zoom/pan. While
   Ink is active, the custom gesture loop waits without consuming single-pointer input, and a
@@ -208,7 +208,6 @@ Key rules:
   - tablet: `smallestScreenWidthDp >= 600`
   - compact height: `screenHeightDp < 480`
   - wide tool ribbon: `screenWidthDp >= 600`
-  - two-page spread: tablet + landscape
 - Landscape editor uses a compact icon-only ribbon (max 720 dp when wide) and a horizontal zoom
   dock in short landscape. The page drawer changes column count for tablets/landscape. Preserve
   these behaviors when touching the toolbar or drawer.
@@ -305,7 +304,7 @@ Before reporting a task complete, confirm all of the following:
   - ruler straight-line drawing
   - current-page PDF export and PNG share
   - stylus-only finger rejection on a device with a stylus (if available)
-  - two-page spread and editing both pages on a tablet in landscape
+  - two-finger vertical page scrolling, page indicator, and page-drawer jump
   - cover-tone chooser and persistence after relaunch
   - settings: theme override, default tool, default paper, autosave indicator
   - PDF export of a single-page and multi-page notebook, then open the PDF
@@ -336,8 +335,8 @@ asking:
 - Page-level export/share handles the current page only; whole-notebook export is PDF.
 - Undo history is session-only.
 - Notes are local only: no sync, export, cloud backup, or sharing.
-- Page navigation is page-by-page with controls/drawer, not a continuous scroll canvas. Tablet
-  landscape uses a two-page spread.
+- Page navigation is continuous vertical scrolling with two-finger pan; there are no previous/next
+  buttons. The thumbnail drawer jumps directly to a page.
 - Media insertion and collaboration are not implemented.
 - Dry strokes use NoteCraft's renderer, so wet Ink and dry strokes can differ slightly.
 - Ruler and stylus-only modes use NoteCraft's custom renderer instead of the Ink overlay.

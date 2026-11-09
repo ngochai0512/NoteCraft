@@ -72,6 +72,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
@@ -173,12 +174,11 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val isTablet = configuration.smallestScreenWidthDp >= 600
     val compactHeight = configuration.screenHeightDp < 480
     val compactTools = compactHeight || isLandscape
     val wideTools = configuration.screenWidthDp >= 600
-    val spread = isTablet && isLandscape
-    val pageStep = if (spread) 2 else 1
+    var pageScrollRequest by remember { mutableIntStateOf(0) }
+    val requestPageScroll: () -> Unit = { pageScrollRequest++ }
 
     LaunchedEffect(editor.pageIndex) {
         expandedTool = null
@@ -347,6 +347,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 onClick = {
                                     showMenu = false
                                     viewModel.addPage()
+                                    requestPageScroll()
                                 },
                             )
                             DropdownMenuItem(
@@ -355,6 +356,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 onClick = {
                                     showMenu = false
                                     viewModel.duplicatePage()
+                                    requestPageScroll()
                                 },
                             )
                             DropdownMenuItem(
@@ -364,6 +366,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 onClick = {
                                     showMenu = false
                                     viewModel.movePage(-1)
+                                    requestPageScroll()
                                 },
                             )
                             DropdownMenuItem(
@@ -373,6 +376,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 onClick = {
                                     showMenu = false
                                     viewModel.movePage(1)
+                                    requestPageScroll()
                                 },
                             )
                             DropdownMenuItem(
@@ -390,6 +394,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 onClick = {
                                     showMenu = false
                                     viewModel.deletePage()
+                                    requestPageScroll()
                                 },
                             )
                             HorizontalDivider()
@@ -501,27 +506,16 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            if (!isLandscape) {
-                PageNavigator(
-                    pageIndex = editor.pageIndex,
-                    pageCount = editor.note.pageCount,
-                    onPrevious = { viewModel.goToPage(editor.pageIndex - pageStep) },
-                    onNext = { viewModel.goToPage(editor.pageIndex + pageStep) },
-                    modifier = Modifier.padding(
-                        horizontal = if (isTablet) 16.dp else 12.dp,
-                        vertical = 8.dp,
-                    ),
-                )
-            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
             ) {
                 DrawingCanvas(
-                    page = editor.page,
-                    secondPage = if (spread) editor.note.pages.getOrNull(editor.pageIndex + 1) else null,
+                    pages = editor.note.pages,
                     pageIndex = editor.pageIndex,
+                    noteId = editor.note.id,
+                    scrollRequest = pageScrollRequest,
                     tool = editor.tool,
                     color = editor.color,
                     width = editor.width,
@@ -530,6 +524,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     selectedStrokeIds = editor.selectedStrokeIds,
                     selectedTextIds = editor.selectedTextIds,
                     selectionPageIndex = editor.selectionPageIndex,
+                    onVisiblePageChanged = { index -> viewModel.goToPage(index) },
                     onStrokeCommitted = { stroke, targetPage ->
                         if (stroke.tool in PersistentTools) viewModel.addStroke(stroke, targetPage)
                     },
@@ -560,20 +555,16 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     onShowPageBackground = { showBackgroundDialog = true },
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (isLandscape) {
-                    PageNavigator(
-                        pageIndex = editor.pageIndex,
-                        pageCount = editor.note.pageCount,
-                        onPrevious = { viewModel.goToPage(editor.pageIndex - pageStep) },
-                        onNext = { viewModel.goToPage(editor.pageIndex + pageStep) },
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .windowInsetsPadding(
-                                WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal),
-                            )
-                            .padding(12.dp),
-                    )
-                }
+                PageIndicator(
+                    pageIndex = editor.pageIndex,
+                    pageCount = editor.note.pageCount,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .windowInsetsPadding(
+                            WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal),
+                        )
+                        .padding(12.dp),
+                )
             }
         }
     }
@@ -604,14 +595,19 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 currentIndex = editor.pageIndex,
                 onSelect = { index ->
                     viewModel.goToPage(index)
+                    requestPageScroll()
                     showPageDrawer = false
                 },
                 onAdd = {
                     viewModel.addPage()
+                    requestPageScroll()
                     showPageDrawer = false
                 },
                 onToggleBookmark = { index -> viewModel.togglePageBookmark(index) },
-                onReorder = { from, to -> viewModel.movePageTo(from, to) },
+                onReorder = { from, to ->
+                    viewModel.movePageTo(from, to)
+                    requestPageScroll()
+                },
             )
         }
     }
@@ -785,53 +781,28 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
 }
 
 @Composable
-private fun PageNavigator(
+private fun PageIndicator(
     pageIndex: Int,
     pageCount: Int,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier.border(
             width = 1.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(50),
         ),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
         tonalElevation = 0.dp,
-        shadowElevation = 6.dp,
+        shadowElevation = 4.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .height(42.dp)
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = onPrevious,
-                enabled = pageIndex > 0,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                    contentDescription = "Previous page",
-                    modifier = Modifier.size(21.dp),
-                )
-            }
-            IconButton(
-                onClick = onNext,
-                enabled = pageIndex < pageCount - 1,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    contentDescription = "Next page",
-                    modifier = Modifier.size(21.dp),
-                )
-            }
-        }
+        Text(
+            text = "PAGE ${pageIndex + 1} / $pageCount",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+        )
     }
 }
 

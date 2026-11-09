@@ -119,7 +119,7 @@
 * Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
 * Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
 * A straight-edge ruler can be toggled on from the zoom controls. Its handle moves and rotates the guide, and strokes that start near the edge snap to a perfectly straight line.
-* Two-page spread is enabled on tablets in landscape. Both pages are editable; the left page remains the current page for page-level actions.
+* Pages are arranged in a continuous vertical stack. Two-finger drag scrolls; a passive page indicator shows the current page, and the thumbnail drawer jumps directly to a page. Previous/next arrow controls are intentionally removed.
 * Paper is allowed to extend behind display cutouts and system bars, while toolbars, navigation, zoom controls, and sheets inset themselves using `WindowInsets.safeDrawing` / `WindowInsets.displayCutout`.
 * The eraser removes only the touched portion of a stroke; shapes and text are removed whole, and each erase gesture is one undo step.
 
@@ -142,6 +142,6 @@
 ## 6. Interaction & Micro-Motion Principles
 * **Tool Switching**: Instant with crisp scale bounce (`scale(0.92)` on tap down, returning to `scale(1)`).
 * **Palette Expansion**: Smooth accordion drop with slight spring curve (`cubic-bezier(0.16, 1, 0.3, 1)`).
-* **Page Turn / Swipe**: Fluid horizontal swipe transition simulating page leafing.
+* **Page Scrolling**: Continuous vertical movement through stacked pages with two-finger drag; no arrow buttons or page-turn animation.
 * **Undo / Redo Haptic Feedback**: Visual pulse indicator on toolbar state change.
 * **PDF Export**: Uses the system document picker, writes A4 pages at 150 dpi, and keeps the existing paper, template and ink rendering. The current page can be exported alone or shared as a PNG through the system share sheet.
