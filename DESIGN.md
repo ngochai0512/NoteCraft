@@ -119,7 +119,7 @@
 * Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
 * Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
 * A straight-edge ruler can be toggled on from the zoom controls. Its handle moves and rotates the guide, and strokes that start near the edge snap to a perfectly straight line.
-* Pages are arranged in a continuous vertical stack. Two-finger drag scrolls; a passive page indicator shows the current page, and the thumbnail drawer jumps directly to a page. Previous/next arrow controls are intentionally removed.
+* Pages are arranged in a continuous vertical stack with a subtle divider between sheets. Two-finger drag scrolls with inertia; a passive page indicator shows the current page, and the thumbnail drawer jumps directly to a page. Previous/next arrow controls are intentionally removed.
 * Paper is allowed to extend behind display cutouts and system bars, while toolbars, navigation, zoom controls, and sheets inset themselves using `WindowInsets.safeDrawing` / `WindowInsets.displayCutout`.
 * The eraser removes only the touched portion of a stroke; shapes and text are removed whole, and each erase gesture is one undo step.
 

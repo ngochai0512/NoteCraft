@@ -33,11 +33,16 @@ Do not answer from memory or guess APIs. Read the files that own the behavior yo
 - `app/src/main/java/com/notecraft/data/NoteRepository.kt` — JSON format and persistence.
 - `app/src/main/java/com/notecraft/ui/editor/DrawingCanvas.kt` — gestures, viewport, Ink overlay.
 - `app/src/main/java/com/notecraft/ui/editor/PageRenderer.kt` — paper, backgrounds, strokes, text.
-- `app/src/main/java/com/notecraft/ui/editor/EditorScreen.kt` — editor scaffold, dialogs, page drawer.
-- `app/src/main/java/com/notecraft/ui/editor/EditorToolbar.kt` — tool ribbon and tool options.
+- `app/src/main/java/com/notecraft/ui/editor/EditorScreen.kt` — editor scaffold, menus, dialogs.
+- `app/src/main/java/com/notecraft/ui/editor/PageDrawer.kt` — page grid, reorder, bookmark star.
+- `app/src/main/java/com/notecraft/ui/editor/EditorToolbar.kt` — compact tool ribbon.
+- `app/src/main/java/com/notecraft/ui/editor/EditorToolOptions.kt` — tool options and color picker.
+- `app/src/main/java/com/notecraft/ui/editor/CanvasControls.kt` — zoom dock and ruler handle.
+- `app/src/main/java/com/notecraft/ui/editor/CanvasDrawing.kt` — shared canvas draw helpers and Ink conversion.
 - `app/src/main/java/com/notecraft/ui/library/LibraryScreen.kt` — note library.
 - `app/src/main/java/com/notecraft/ui/settings/SettingsScreen.kt` — dedicated preferences screen.
 - `app/src/main/java/com/notecraft/ui/components/CoverToneDialog.kt` — notebook cover chooser.
+- `app/src/main/java/com/notecraft/ui/components/NoteThumbnail.kt` — cached library thumbnails.
 - `app/src/main/java/com/notecraft/util/PdfExporter.kt` — PDF rendering and export.
 - `app/src/main/java/com/notecraft/util/PageSharer.kt` — PNG page sharing through `FileProvider`.
 - `app/src/main/java/com/notecraft/util/Geometry.kt` — hit tests, partial eraser, lasso selection.
@@ -90,8 +95,8 @@ adb logcat -d -t 200 | grep -E "FATAL EXCEPTION|AndroidRuntime"
 Available AVDs in this environment may include `Pixel_10_Pro_XL` and `Pixel_Tablet`. Enable
 auto-rotate to test portrait and landscape; the app declares `fullUser` orientation.
 
-Pure logic tests live under `app/src/test/java` (currently `GeometryTest.kt` for the partial
-eraser). Run them with `./gradlew :app:testDebugUnitTest --offline`. Run a single class while
+Pure logic tests live under `app/src/test/java` (`GeometryTest.kt`, `PageReorderTest.kt`, and
+`ModelTest.kt`). Run them with `./gradlew :app:testDebugUnitTest --offline`. Run a single class while
 iterating with `./gradlew :app:testDebugUnitTest --tests "com.notecraft.util.GeometryTest" --offline`.
 UI tests are not set up yet; do not add instrumentation or Robolectric dependencies without approval.
 Do not claim runtime verification unless you ran the app on a device or emulator.
@@ -185,8 +190,8 @@ Key rules:
   snapping and finger filtering first.
 - Pages are rendered as one vertical stack in `DrawingCanvas`. `pageIndex` follows the page at the
   viewport center; drawing gestures pass their target page index so any visible page is editable.
-  Two-finger pan scrolls/zooms; there are no previous/next page buttons. A page-drawer selection
-  uses `scrollRequest` to snap the stack to that page.
+  Two-finger pan scrolls/zooms with a decay fling; there are no previous/next page buttons. A
+  page-drawer selection uses `scrollRequest` to snap the stack to that page.
 - Pencil, shapes, tape, laser, text, and lasso remain custom. Do not route them through Ink.
 - Gesture handoff is deliberate: one finger draws (or erases/selects), two fingers zoom/pan. While
   Ink is active, the custom gesture loop waits without consuming single-pointer input, and a
@@ -201,8 +206,9 @@ Key rules:
 - Discrete page changes (`addStroke`, page operations, text edits, background changes, and
   delete/duplicate selection) must go through `commitPages` so they are undoable.
 - Selection state itself (selected IDs) is transient UI state and is not pushed to undo history.
-- Continuous gestures use baselines: `beginErase`/`endErase` and
-  `beginSelectionMove`/`endSelectionMove`. Do not push an undo snapshot per pointer event.
+- Continuous gestures use baselines: `beginErase`/`endErase`,
+  `beginSelectionMove`/`endSelectionMove`, `beginTextResize`/`endTextResize`, and
+  `beginStickyMove`/`endStickyMove`. Do not push an undo snapshot or sync/save per pointer event.
 - Destructive edits should remain undoable whenever the existing model supports it. If a change is
   intentionally transient (laser, preview), keep it out of history and persistence.
 - After history changes, `canUndo`/`canRedo` must be kept in sync.
@@ -255,6 +261,7 @@ Key rules:
   edited text.
 - Sticky tool: tap empty paper to add a colored sticky note, tap a note to edit it, and drag it to
   move it. The eraser removes sticky notes whole. Sticky notes are not part of lasso selection.
+  The tool dropdown adjusts card width and text size; long text grows the card at render time.
 - Page-level export and sharing use the current page: export as PDF through the document picker or
   share as PNG through `PageSharer`. Whole-notebook export remains the editor/library PDF action.
 - The eraser has Partial and Object modes. Partial removes only the touched portion of a stroke and

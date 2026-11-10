@@ -25,7 +25,7 @@ UI: Jetpack Compose + Material 3
 - **Laser pointer** — a red trail that fades when you lift your finger
 - **Pencil** — textured graphite line
 - **Text** — resizable typed text boxes with wrapping, left/center/right alignment, bold/italic/underline, bullet/numbered lists, line spacing, highlight, and edit-in-place
-- **Sticky notes** — lightweight colored callouts with wrapped text; tap to add, drag to move, tap to edit
+- **Sticky notes** — lightweight colored callouts with wrapped text and adjustable text size; tap to add, drag to move, tap to edit
 - **Lasso** — select strokes and text to move, duplicate or delete
 - **Ruler** — toggle a draggable straight-edge guide; strokes started near it snap to a straight line
 
@@ -51,7 +51,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Star a page as a bookmark; the star is shown on its page-drawer thumbnail
 - Page backgrounds: blank, ruled, squared graph, dotted, Cornell, daily planner, weekly planner, music staff, storyboard and checklist
 - Continuous vertical page scrolling with a passive page indicator; no previous/next arrows
-- Two-finger drag scrolls through pages; the page drawer jumps directly to a page
+- Two-finger drag scrolls through pages with inertia; the page drawer jumps directly to a page
 - Page thumbnail drawer accessible from the zoom controls, with a quick add-page tile
 - Live notebook-cover previews in the library
 - Notebook covers with spine crease, ribbon bookmark and label badge
@@ -275,7 +275,7 @@ This is intentionally a compact version of a full note-taking app:
 - Page export and sharing work on the current page only; whole-notebook export remains PDF.
 - Undo history lasts for the current app session only.
 - Notes are local to the device; there is no sync, cloud backup, or import yet. PDF export is available.
-- Continuous vertical scrolling uses a two-finger drag so one-finger drawing stays untouched; there are no previous/next buttons.
+- Continuous vertical scrolling uses a two-finger drag so one-finger drawing stays untouched, and the page stack has no previous/next buttons.
 - Media insertion and collaboration are not implemented yet.
 - Ink is used for authoring and wet rendering; dry strokes still use NoteCraft's renderer, so wet and dry Ink strokes can differ slightly.
 - Pencil, shape, tape, laser, text, sticky notes, and lasso interactions remain custom.
