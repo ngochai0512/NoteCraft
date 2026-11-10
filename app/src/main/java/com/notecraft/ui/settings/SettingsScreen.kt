@@ -60,9 +60,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.notecraft.model.DefaultToolChoices
 import com.notecraft.model.PageBackground
 import com.notecraft.model.ThemeMode
-import com.notecraft.model.ToolType
 import com.notecraft.ui.NoteCraftViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,7 +148,7 @@ fun SettingsScreen(viewModel: NoteCraftViewModel) {
                         title = "Default tool",
                         description = "The tool selected when you open a notebook.",
                         value = settings.defaultTool.label,
-                        options = ToolType.entries.map { it.label to it },
+                        options = DefaultToolChoices.map { it.label to it },
                         onSelect = viewModel::setDefaultTool,
                     )
                     SectionDivider()
