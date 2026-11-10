@@ -1,18 +1,15 @@
 package com.notecraft.ui.editor
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
@@ -20,18 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FitScreen
-import androidx.compose.material.icons.outlined.GridOn
-import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Straighten
-import androidx.compose.material.icons.outlined.ZoomIn
-import androidx.compose.material.icons.outlined.ZoomOut
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,26 +29,20 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.IntOffset
@@ -76,6 +57,7 @@ import com.notecraft.model.StickyNote
 import com.notecraft.model.Stroke as InkStroke
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
+import com.notecraft.model.blankPage
 import com.notecraft.model.newId
 import com.notecraft.util.approximateBounds
 import com.notecraft.util.hitHandle
@@ -85,23 +67,35 @@ import com.notecraft.util.selectionBounds
 import com.notecraft.ui.theme.PaperSurface
 import androidx.ink.authoring.compose.InProgressStrokes
 import androidx.ink.brush.Brush as InkApiBrush
-import androidx.ink.brush.SelfOverlap
-import androidx.ink.brush.StockBrushes
 import androidx.ink.strokes.Stroke as InkApiStroke
 import android.util.Log
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-
-private data class CanvasTransform(val scale: Float, val origin: Offset)
+import kotlinx.coroutines.launch
 
 private class CanvasViewport {
     var zoom by mutableFloatStateOf(1f)
     var pan by mutableStateOf(Offset.Zero)
+}
+
+private class FlingHandle {
+    var job: Job? = null
+}
+
+private class InkTargetState(pageIndex: Int) {
+    var pageIndex: Int = pageIndex
+    var origin: Offset = Offset.Zero
+}
+
+private class VisiblePageState(value: Int) {
+    var value: Int = value
 }
 
 private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, TEXT_RESIZE, STICKY, STICKY_MOVE, LASSO, MOVE, LASER }
@@ -155,6 +149,8 @@ fun DrawingCanvas(
     val compactHeight = configuration.screenHeightDp < 480
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val viewport = remember(noteId) { CanvasViewport() }
+    val scope = rememberCoroutineScope()
+    val flingHandle = remember { FlingHandle() }
     var previewStroke by remember { mutableStateOf<InkStroke?>(null) }
     var lassoPreview by remember { mutableStateOf<List<Pt>>(emptyList()) }
     var laserPoints by remember { mutableStateOf<List<Pt>>(emptyList()) }
@@ -163,9 +159,8 @@ fun DrawingCanvas(
     var rulerFraction by remember { mutableFloatStateOf(0.42f) }
     var rulerAngle by remember { mutableFloatStateOf(0f) }
     var gesturePage by remember { mutableIntStateOf(pageIndex) }
-    val inkTargetPage = remember { intArrayOf(pageIndex) }
-    val inkOrigin = remember { arrayOf(Offset.Zero) }
-    val lastVisiblePage = remember(noteId) { intArrayOf(pageIndex) }
+    val inkTarget = remember { InkTargetState(pageIndex) }
+    val lastVisiblePage = remember(noteId) { VisiblePageState(pageIndex) }
 
     val currentPages by rememberUpdatedState(pages)
     val visiblePageChanged by rememberUpdatedState(onVisiblePageChanged)
@@ -211,7 +206,7 @@ fun DrawingCanvas(
     }
 
     fun pageFor(index: Int): Page =
-        currentPages.getOrElse(index) { currentPages.last() }
+        currentPages.getOrNull(index) ?: currentPages.firstOrNull() ?: blankPage()
 
     fun baseScale(size: IntSize): Float {
         if (size.width == 0 || size.height == 0) return 1f
@@ -256,8 +251,8 @@ fun DrawingCanvas(
 
     fun notifyVisiblePage() {
         val visible = visiblePageIndex()
-        if (visible != lastVisiblePage[0]) {
-            lastVisiblePage[0] = visible
+        if (visible != lastVisiblePage.value) {
+            lastVisiblePage.value = visible
             visiblePageChanged(visible)
         }
     }
@@ -311,6 +306,7 @@ fun DrawingCanvas(
     }
 
     fun zoomBy(factor: Float) {
+        flingHandle.job?.cancel()
         if (canvasSize.width == 0 || canvasSize.height == 0) return
         applyTransform(
             focus = Offset(canvasSize.width / 2f, canvasSize.height / 2f),
@@ -320,6 +316,7 @@ fun DrawingCanvas(
     }
 
     fun resetViewport() {
+        flingHandle.job?.cancel()
         viewport.zoom = 1f
         viewport.pan = Offset.Zero
         notifyVisiblePage()
@@ -329,6 +326,7 @@ fun DrawingCanvas(
         if (canvasSize.height == 0 || currentPages.isEmpty()) {
             return@LaunchedEffect
         }
+        flingHandle.job?.cancel()
         val target = pageIndex.coerceIn(0, currentPages.lastIndex)
         val transform = currentTransform()
         if (transform.scale <= 0f) return@LaunchedEffect
@@ -336,7 +334,7 @@ fun DrawingCanvas(
             viewport.pan.x,
             -target * (PAGE_HEIGHT + PageGap) * transform.scale,
         )
-        lastVisiblePage[0] = target
+        lastVisiblePage.value = target
         visiblePageChanged(target)
     }
 
@@ -416,19 +414,21 @@ fun DrawingCanvas(
 
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        flingHandle.job?.cancel()
+                        flingHandle.job = null
                         val downIsStylus = down.type == PointerType.Stylus
                         val (targetIndex, downPage) = pageAt(down.position)
                         val targetPage = pageFor(targetIndex)
                         gesturePage = targetIndex
-                        if (targetIndex != lastVisiblePage[0]) {
-                            lastVisiblePage[0] = targetIndex
+                        if (targetIndex != lastVisiblePage.value) {
+                            lastVisiblePage.value = targetIndex
                             visiblePageChanged(targetIndex)
                         }
 
                         if (effectiveInk) {
                             if (!stylusOnly || downIsStylus) {
-                                inkTargetPage[0] = targetIndex
-                                inkOrigin[0] = pageOriginFor(targetIndex)
+                                inkTarget.pageIndex = targetIndex
+                                inkTarget.origin = pageOriginFor(targetIndex)
                             }
                             // The Ink overlay owns the wet stroke. Wait out the gesture without
                             // consuming so it remains available to InProgressStrokes.
@@ -454,6 +454,8 @@ fun DrawingCanvas(
                         var stickyMoveActive = false
                         var movingStickyId: String? = null
                         var stickyMoved = false
+                        var zoomedDuringGesture = false
+                        val velocityTracker = VelocityTracker()
                         var rulerSnap = false
                         if (rulerEnabled && distanceToRuler(down.position) <= 64.dp.toPx()) {
                             rulerSnap = true
@@ -623,6 +625,11 @@ fun DrawingCanvas(
                                     }
                                     mode = GestureMode.NONE
                                 }
+                                val centroid = event.calculateCentroid(useCurrent = true)
+                                if (centroid != Offset.Unspecified) {
+                                    velocityTracker.addPosition(event.changes.first().uptimeMillis, centroid)
+                                }
+                                if (event.calculateZoom() != 1f) zoomedDuringGesture = true
                                 applyMultiTouch(event)
                             } else {
                                 val change = if (ignoreFingers) {
@@ -735,6 +742,21 @@ fun DrawingCanvas(
                             if (event.changes.none { it.pressed } || !stylusStillDown) break
                         }
 
+                        if (transformMode) {
+                            val velocity = velocityTracker.calculateVelocity()
+                            if (!zoomedDuringGesture && abs(velocity.y) > 500f) {
+                                val basePan = viewport.pan
+                                flingHandle.job?.cancel()
+                                flingHandle.job = scope.launch {
+                                    val anim = Animatable(0f)
+                                    anim.animateDecay(velocity.y, exponentialDecay()) {
+                                        viewport.pan = Offset(basePan.x, basePan.y + value)
+                                        notifyVisiblePage()
+                                    }
+                                }
+                            }
+                        }
+
                         if (!transformMode) {
                             when (mode) {
                                 GestureMode.DRAW -> makeStroke()?.let { commitStroke(it, targetIndex) }
@@ -823,6 +845,15 @@ fun DrawingCanvas(
                         drawBackground = false,
                         clip = true,
                     )
+                    if (index < currentPages.lastIndex) {
+                        val dividerY = pageOrigin.y + pageHeightPx + (PageGap * transform.scale) / 2f
+                        drawLine(
+                            color = Color(0xFF94A3B8).copy(alpha = 0.28f),
+                            start = Offset(pageOrigin.x, dividerY),
+                            end = Offset(pageOrigin.x + PAGE_WIDTH * transform.scale, dividerY),
+                            strokeWidth = 1f,
+                        )
+                    }
                 }
 
                 if (tool == ToolType.TEXT) {
@@ -876,15 +907,15 @@ fun DrawingCanvas(
                             color = color,
                             width = width,
                             scale = inkScale,
-                            origin = inkOrigin[0],
-                        )?.let { converted -> commitStroke(converted, inkTargetPage[0]) }
+                            origin = inkTarget.origin,
+                        )?.let { converted -> commitStroke(converted, inkTarget.pageIndex) }
                     }
                 },
             )
         }
 
         if (rulerEnabled) {
-            Surface(
+            RulerHandle(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .windowInsetsPadding(
@@ -901,152 +932,29 @@ fun DrawingCanvas(
                                     sin(radians) * radius
                                 ).roundToInt(),
                         )
-                    }
-                    .size(44.dp)
-                    .pointerInput(Unit) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            if (canvasSize.height > 0) {
-                                rulerFraction = (rulerFraction + dragAmount.y / canvasSize.height)
-                                    .coerceIn(0.08f, 0.92f)
-                            }
-                            rulerAngle = (rulerAngle + dragAmount.x * 0.4f).coerceIn(-85f, 85f)
-                        }
                     },
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                tonalElevation = 0.dp,
-                shadowElevation = 6.dp,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Outlined.Straighten,
-                        contentDescription = "Drag ruler; slide sideways to rotate",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
+                onDrag = { dragAmount ->
+                    if (canvasSize.height > 0) {
+                        rulerFraction = (rulerFraction + dragAmount.y / canvasSize.height)
+                            .coerceIn(0.08f, 0.92f)
+                    }
+                    rulerAngle = (rulerAngle + dragAmount.x * 0.4f).coerceIn(-85f, 85f)
+                },
+            )
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .windowInsetsPadding(
-                    WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal),
-                )
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-                tonalElevation = 0.dp,
-                shadowElevation = 10.dp,
-                modifier = Modifier.border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
-                    shape = RoundedCornerShape(16.dp),
-                ),
-            ) {
-                if (compactHeight) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ZoomControlButton(
-                            icon = Icons.Outlined.ZoomOut,
-                            description = "Zoom out",
-                            onClick = { zoomBy(1f / 1.3f) },
-                        )
-                        Text(
-                            text = "${(viewport.zoom * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 2.dp),
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.ZoomIn,
-                            description = "Zoom in",
-                            onClick = { zoomBy(1.3f) },
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.FitScreen,
-                            description = "Reset view",
-                            onClick = ::resetViewport,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp)
-                                .size(width = 1.dp, height = 20.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant),
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.GridView,
-                            description = "Page thumbnails",
-                            onClick = onShowPages,
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.GridOn,
-                            description = "Page background",
-                            onClick = onShowPageBackground,
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.Straighten,
-                            description = "Ruler",
-                            active = rulerEnabled,
-                            onClick = { rulerEnabled = !rulerEnabled },
-                        )
-                    }
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        ZoomControlButton(
-                            icon = Icons.Outlined.ZoomIn,
-                            description = "Zoom in",
-                            onClick = { zoomBy(1.3f) },
-                        )
-                        Text(
-                            text = "${(viewport.zoom * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.ZoomOut,
-                            description = "Zoom out",
-                            onClick = { zoomBy(1f / 1.3f) },
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.FitScreen,
-                            description = "Reset view",
-                            onClick = ::resetViewport,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(vertical = 4.dp)
-                                .size(width = 20.dp, height = 1.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant),
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.GridView,
-                            description = "Page thumbnails",
-                            onClick = onShowPages,
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.GridOn,
-                            description = "Page background",
-                            onClick = onShowPageBackground,
-                        )
-                        ZoomControlButton(
-                            icon = Icons.Outlined.Straighten,
-                            description = "Ruler",
-                            active = rulerEnabled,
-                            onClick = { rulerEnabled = !rulerEnabled },
-                        )
-                    }
-                }
-            }
-        }
+        CanvasZoomDock(
+            compactHeight = compactHeight,
+            zoomPercent = (viewport.zoom * 100).toInt(),
+            rulerEnabled = rulerEnabled,
+            onZoomIn = { zoomBy(1.3f) },
+            onZoomOut = { zoomBy(1f / 1.3f) },
+            onReset = ::resetViewport,
+            onShowPages = onShowPages,
+            onShowPageBackground = onShowPageBackground,
+            onToggleRuler = { rulerEnabled = !rulerEnabled },
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
 
         if (tool == ToolType.TEXT || tool == ToolType.LASSO || tool == ToolType.STICKY) {
             Surface(
@@ -1077,175 +985,3 @@ fun DrawingCanvas(
 }
 
 private const val PageGap = 36f
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRulerGuide(
-    pivot: Offset,
-    angleDegrees: Float,
-    color: Color,
-) {
-    val bandHeight = 34.dp.toPx()
-    val halfLength = hypot(size.width, size.height)
-    rotate(degrees = angleDegrees, pivot = pivot) {
-        val left = pivot.x - halfLength
-        drawRoundRect(
-            color = Color.White.copy(alpha = 0.88f),
-            topLeft = Offset(left, pivot.y),
-            size = Size(halfLength * 2f, bandHeight),
-            cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
-        )
-        drawLine(
-            color = Color(0xFFCBD5E1),
-            start = Offset(left, pivot.y + bandHeight),
-            end = Offset(left + halfLength * 2f, pivot.y + bandHeight),
-            strokeWidth = 1f,
-        )
-        var x = left
-        val step = 26.dp.toPx()
-        var index = 0
-        while (x <= left + halfLength * 2f) {
-            val tick = if (index % 4 == 0) 16.dp.toPx() else 8.dp.toPx()
-            drawLine(
-                color = color.copy(alpha = 0.55f),
-                start = Offset(x, pivot.y),
-                end = Offset(x, pivot.y + tick),
-                strokeWidth = 1f,
-            )
-            x += step
-            index++
-        }
-        drawLine(
-            color = color,
-            start = Offset(left, pivot.y),
-            end = Offset(left + halfLength * 2f, pivot.y),
-            strokeWidth = 2.dp.toPx(),
-        )
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLaserTrail(
-    points: List<Pt>,
-    transform: CanvasTransform,
-) {
-    if (points.size < 2) return
-    val path = Path()
-    points.forEachIndexed { index, point ->
-        val screen = Offset(transform.origin.x + point.x * transform.scale, transform.origin.y + point.y * transform.scale)
-        if (index == 0) path.moveTo(screen.x, screen.y) else path.lineTo(screen.x, screen.y)
-    }
-    drawPath(
-        path = path,
-        color = Color(0xFFEF4444).copy(alpha = 0.18f),
-        style = DrawStroke(width = 22f, cap = StrokeCap.Round, join = StrokeJoin.Round),
-    )
-    drawPath(
-        path = path,
-        color = Color(0xFFEF4444).copy(alpha = 0.85f),
-        style = DrawStroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round),
-    )
-}
-
-private fun createInkBrush(
-    tool: ToolType,
-    color: Long,
-    width: Float,
-    scale: Float,
-): InkApiBrush? {
-    if (scale <= 0f) return null
-    val family = when (tool) {
-        ToolType.FOUNTAIN_PEN -> StockBrushes.pressurePen()
-        ToolType.BALL_PEN -> StockBrushes.marker()
-        ToolType.BRUSH_PEN -> StockBrushes.pressurePen()
-        ToolType.HIGHLIGHTER -> StockBrushes.highlighter(SelfOverlap.DISCARD)
-        else -> return null
-    }
-    val argb = color.toInt()
-    val inkColor = if (tool == ToolType.HIGHLIGHTER) {
-        val alpha = (((argb ushr 24) and 0xFF) * 0.30f).roundToInt().coerceIn(1, 255)
-        (argb and 0x00FFFFFF) or (alpha shl 24)
-    } else {
-        argb
-    }
-    val sizePx = (width * scale).coerceAtLeast(0.75f)
-    return InkApiBrush.createWithColorIntArgb(family, inkColor, sizePx, 0.1f)
-}
-
-private fun InkApiStroke.toNoteCraftStroke(
-    tool: ToolType,
-    color: Long,
-    width: Float,
-    scale: Float,
-    origin: Offset,
-): InkStroke? {
-    if (scale <= 0f || inputs.size == 0) return null
-    val points = ArrayList<Pt>(inputs.size)
-    for (index in 0 until inputs.size) {
-        val input = inputs[index]
-        if (!input.x.isFinite() || !input.y.isFinite()) continue
-        val x = (input.x - origin.x) / scale
-        val y = (input.y - origin.y) / scale
-        val pressure = if (input.hasPressure) {
-            input.pressure.coerceIn(0.15f, 1f)
-        } else {
-            0.5f
-        }
-        if (points.isEmpty() || hypot(x - points.last().x, y - points.last().y) >= 0.4f) {
-            points.add(Pt(x, y, pressure))
-        }
-    }
-    if (points.isEmpty()) return null
-    val id = newId()
-    return InkStroke(
-        id = id,
-        tool = tool,
-        color = color,
-        width = width,
-        points = points,
-        seed = id.hashCode(),
-    )
-}
-
-@Composable
-private fun ZoomControlButton(
-    icon: ImageVector,
-    description: String,
-    onClick: () -> Unit,
-    active: Boolean = false,
-) {
-    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-        Icon(
-            icon,
-            contentDescription = description,
-            tint = if (active) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLassoPreview(
-    points: List<Pt>,
-    transform: CanvasTransform,
-) {    if (points.size < 2) return
-    val path = Path()
-    points.forEachIndexed { index, point ->
-        val screen = Offset(transform.origin.x + point.x * transform.scale, transform.origin.y + point.y * transform.scale)
-        if (index == 0) path.moveTo(screen.x, screen.y) else path.lineTo(screen.x, screen.y)
-    }
-    path.close()
-    drawPath(
-        path = path,
-        color = Color(0xFF2563EB).copy(alpha = 0.08f),
-    )
-    drawPath(
-        path = path,
-        color = Color(0xFF2563EB),
-        style = DrawStroke(
-            width = 2f,
-            cap = StrokeCap.Round,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f), 0f),
-        ),
-    )
-}
