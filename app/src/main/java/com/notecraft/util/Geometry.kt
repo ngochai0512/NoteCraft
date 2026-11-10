@@ -9,12 +9,9 @@ import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.model.newId
 import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sin
 
 data class Bounds(
     val left: Float,
@@ -299,7 +296,19 @@ fun TextItem.hitTest(x: Float, y: Float, extraRadius: Float): Boolean =
 fun TextItem.hitHandle(x: Float, y: Float, tolerance: Float): Boolean =
     resizeHandle(tolerance).contains(x, y)
 
-fun StickyNote.bounds(): Bounds = Bounds(x, y, x + width, y + height)
+internal const val StickyTextPadding = 16f
+
+/** Grows the card height when wrapped text would overflow the stored height. */
+fun StickyNote.effectiveHeight(): Float {
+    if (text.isBlank()) return height
+    val availableWidth = (width - StickyTextPadding * 2f).coerceAtLeast(1f)
+    val maxChars = (availableWidth / (fontSize * 0.52f)).toInt().coerceAtLeast(1)
+    val lines = text.split('\n').flatMap { line -> wrapLine(line, maxChars) }
+    val textHeight = lines.size * fontSize * 1.3f + StickyTextPadding * 2f
+    return max(height, textHeight)
+}
+
+fun StickyNote.bounds(): Bounds = Bounds(x, y, x + width, y + effectiveHeight())
 
 fun StickyNote.hitTest(x: Float, y: Float, extraRadius: Float = 0f): Boolean =
     bounds().expand(extraRadius).contains(x, y)
@@ -326,19 +335,4 @@ fun selectInsidePolygon(page: Page, polygon: List<Pt>): Pair<Set<String>, Set<St
         .map { it.id }
         .toSet()
     return strokeIds to textIds
-}
-
-fun arrowHeadPoints(start: Pt, end: Pt, size: Float = 20f): Pair<Pt, Pt> {
-    val angle = atan2(end.y - start.y, end.x - start.x)
-    val length = hypot(end.x - start.x, end.y - start.y)
-    val head = min(size, max(length * 0.25f, 4f))
-    val first = Pt(
-        x = end.x - head * cos(angle - 0.5f),
-        y = end.y - head * sin(angle - 0.5f),
-    )
-    val second = Pt(
-        x = end.x - head * cos(angle + 0.5f),
-        y = end.y - head * sin(angle + 0.5f),
-    )
-    return first to second
 }

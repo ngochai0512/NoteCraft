@@ -142,6 +142,35 @@ class GeometryTest {
     }
 
     @Test
+    fun stickyNoteGrowsWhenTextOverflows() {
+        val note = StickyNote(
+            id = "sticky-long",
+            x = 0f,
+            y = 0f,
+            width = 200f,
+            height = 120f,
+            text = "This sticky note text is long enough to wrap over several lines and force the card to grow.",
+        )
+
+        assertTrue(note.effectiveHeight() > note.height)
+        assertTrue(note.bounds().height > note.height)
+    }
+
+    @Test
+    fun stickyNoteKeepsItsHeightForShortText() {
+        val note = StickyNote(
+            id = "sticky-short",
+            x = 0f,
+            y = 0f,
+            width = 280f,
+            height = 202f,
+            text = "Short",
+        )
+
+        assertEquals(202f, note.effectiveHeight(), 0.001f)
+    }
+
+    @Test
     fun stickyNoteHitTestUsesItsBox() {
         val note = StickyNote(
             id = "sticky",

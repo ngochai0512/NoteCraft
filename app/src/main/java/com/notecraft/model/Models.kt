@@ -34,6 +34,17 @@ val PrimaryTools: List<ToolType> = listOf(
     ToolType.STICKY,
 )
 
+/** Tools that make sense as the editor's startup tool. */
+val DefaultToolChoices: List<ToolType> = listOf(
+    ToolType.FOUNTAIN_PEN,
+    ToolType.BALL_PEN,
+    ToolType.BRUSH_PEN,
+    ToolType.PENCIL,
+    ToolType.HIGHLIGHTER,
+    ToolType.TEXT,
+    ToolType.STICKY,
+)
+
 /** Tools kept out of the primary row, reachable from the editor's overflow menu. */
 val SecondaryTools: List<ToolType> = listOf(
     ToolType.SHAPE,
@@ -98,10 +109,6 @@ data class TextFormatting(
     val lineSpacing: Float = 1f,
     val highlightColor: Long? = null,
 ) {
-    val isPlain: Boolean
-        get() = !bold && !italic && !underline &&
-            listStyle == TextListStyle.NONE && highlightColor == null
-
     /** Prefix list lines at render time so the stored text remains editable as plain text. */
     fun decorate(text: String): String {
         if (listStyle == TextListStyle.NONE) return text
