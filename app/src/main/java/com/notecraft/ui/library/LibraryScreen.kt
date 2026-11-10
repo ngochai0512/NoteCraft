@@ -63,6 +63,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -94,6 +95,7 @@ import com.notecraft.model.Note
 import com.notecraft.ui.NoteCraftViewModel
 import com.notecraft.ui.components.ConfirmDialog
 import com.notecraft.ui.components.CoverToneDialog
+import com.notecraft.ui.components.ErrorBanner
 import com.notecraft.ui.components.NoteThumbnail
 import com.notecraft.ui.components.TextEntryDialog
 import com.notecraft.ui.theme.InkBlackColor
@@ -317,6 +319,19 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                 )
             }
 
+            viewModel.saveError?.let { message ->
+                ErrorBanner(
+                    message = message,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+            library.error?.takeIf { library.notes.isNotEmpty() }?.let { message ->
+                ErrorBanner(
+                    message = message,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+
             when {
                 library.loading -> {
                     Box(
@@ -325,6 +340,13 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                     ) {
                         CircularProgressIndicator()
                     }
+                }
+
+                library.error != null && library.notes.isEmpty() -> {
+                    LibraryError(
+                        message = library.error,
+                        onRetry = viewModel::reloadLibrary,
+                    )
                 }
 
                 library.notes.isEmpty() -> {
@@ -448,6 +470,43 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                 coverNote = null
             },
         )
+    }
+}
+
+@Composable
+private fun LibraryError(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            Icons.Outlined.Close,
+            contentDescription = null,
+            modifier = Modifier.size(44.dp),
+            tint = MaterialTheme.colorScheme.error,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Your notes are still on this device. Try loading again.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onRetry) {
+            Text("Retry")
+        }
     }
 }
 
@@ -683,6 +742,9 @@ private fun NoteCard(
                 NoteThumbnail(
                     page = previewPage,
                     modifier = Modifier.fillMaxSize(),
+                    cacheKey = previewPage?.let { page ->
+                        "${note.id}:${note.updatedAt}:${page.id}"
+                    },
                 )
             }
 

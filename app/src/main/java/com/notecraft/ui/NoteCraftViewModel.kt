@@ -1,6 +1,7 @@
 package com.notecraft.ui
 
 import android.app.Application
+import android.util.Log
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,9 +11,11 @@ import androidx.lifecycle.viewModelScope
 import com.notecraft.data.NoteRepository
 import com.notecraft.model.AppSettings
 import com.notecraft.model.DefaultTextWidth
+import com.notecraft.model.DefaultToolChoices
 import com.notecraft.model.DefaultToolColors
 import com.notecraft.model.DefaultToolWidths
 import com.notecraft.model.EraserMode
+import com.notecraft.model.InkBlack
 import com.notecraft.model.Note
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
@@ -30,6 +33,7 @@ import com.notecraft.model.duplicate
 import com.notecraft.model.newId
 import com.notecraft.model.newNote
 import com.notecraft.util.hitTest
+import com.notecraft.util.pageIndexAfterMove
 import com.notecraft.util.partialErase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,6 +44,7 @@ private const val MaxRecentColors = 6
 data class LibraryState(
     val notes: List<Note> = emptyList(),
     val loading: Boolean = true,
+    val error: String? = null,
 )
 
 data class EditorState(
@@ -52,6 +57,7 @@ data class EditorState(
     val eraserMode: EraserMode = EraserMode.PARTIAL,
     val textAlignment: TextAlignment = TextAlignment.LEFT,
     val textFormatting: TextFormatting = TextFormatting(),
+    val stickyFontSize: Float = 28f,
     val recentColors: List<Long> = emptyList(),
     val selectedStrokeIds: Set<String> = emptySet(),
     val selectedTextIds: Set<String> = emptySet(),
@@ -60,7 +66,7 @@ data class EditorState(
     val canRedo: Boolean = false,
 ) {
     val page: Page get() = note.pages[pageIndex.coerceIn(0, note.pages.lastIndex)]
-    val color: Long get() = toolColors[tool] ?: 0xFF23222BL
+    val color: Long get() = toolColors[tool] ?: InkBlack
     val width: Float get() = toolWidths[tool] ?: 4f
     val hasSelection: Boolean get() = selectedStrokeIds.isNotEmpty() || selectedTextIds.isNotEmpty()
     val selectionCount: Int get() = selectedStrokeIds.size + selectedTextIds.size
@@ -83,6 +89,8 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
                 ?: EraserMode.PARTIAL.name,
         )
     }.getOrDefault(EraserMode.PARTIAL)
+    private var savedStickyFontSize: Float = preferences.getFloat("sticky_font_size", 28f)
+        .coerceIn(16f, 48f)
     private val savedRecentColors: MutableList<Long> = loadRecentColors()
     private var textResizeBaseline: List<Page>? = null
     private var stickyMoveBaseline: List<Page>? = null
@@ -99,6 +107,9 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     var editor by mutableStateOf<EditorState?>(null)
         private set
 
+    var saveError by mutableStateOf<String?>(null)
+        private set
+
     private val undoStack = ArrayDeque<List<Page>>()
     private val redoStack = ArrayDeque<List<Page>>()
     private var eraseBaseline: List<Page>? = null
@@ -107,9 +118,26 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     private var pendingSave: Note? = null
 
     init {
+        reloadLibrary()
+    }
+
+    fun reloadLibrary() {
+        library = library.copy(loading = true, error = null)
         viewModelScope.launch {
-            val notes = runCatching { repository.loadAll() }.getOrDefault(emptyList())
-            library = LibraryState(notes = notes.sortedByDescending { it.updatedAt }, loading = false)
+            runCatching { repository.loadAll() }
+                .onSuccess { notes ->
+                    library = LibraryState(
+                        notes = notes.sortedByDescending { it.updatedAt },
+                        loading = false,
+                    )
+                }
+                .onFailure { error ->
+                    Log.e("NoteCraft", "Failed to load notes", error)
+                    library = library.copy(
+                        loading = false,
+                        error = "Could not load notebooks from this device.",
+                    )
+                }
         }
     }
 
@@ -118,7 +146,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun createNote() {
         val note = newNote(background = settings.defaultPageBackground ?: PageBackground.BLANK)
         library = library.copy(notes = (listOf(note) + library.notes).sortedByDescending { it.updatedAt })
-        viewModelScope.launch { repository.save(note) }
+        persist(note)
         openNote(note.id)
     }
 
@@ -137,6 +165,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             toolColors = savedToolColors,
             toolWidths = savedToolWidths,
             eraserMode = savedEraserMode,
+            stickyFontSize = savedStickyFontSize,
             recentColors = savedRecentColors.toList(),
             canUndo = false,
             canRedo = false,
@@ -165,14 +194,20 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             undoStack.clear()
             redoStack.clear()
         }
-        viewModelScope.launch { repository.delete(noteId) }
+        viewModelScope.launch {
+            runCatching { repository.delete(noteId) }
+                .onFailure { error ->
+                    saveError = "Could not delete the notebook."
+                    Log.e("NoteCraft", "Failed to delete note $noteId", error)
+                }
+        }
     }
 
     fun duplicateNote(noteId: String) {
         val note = library.notes.firstOrNull { it.id == noteId } ?: return
         val copy = note.duplicate()
         library = library.copy(notes = (library.notes + copy).sortedByDescending { it.updatedAt })
-        viewModelScope.launch { repository.save(copy) }
+        persist(copy)
     }
 
     fun renameNoteInLibrary(noteId: String, title: String) {
@@ -185,7 +220,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         if (editor?.note?.id == noteId) {
             editor = editor?.copy(note = updated)
         }
-        viewModelScope.launch { repository.save(updated) }
+        persist(updated)
     }
 
     fun renameCurrentNote(title: String) {
@@ -203,7 +238,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val note = pendingSave ?: editor?.note ?: return
         saveJob?.cancel()
         pendingSave = null
-        viewModelScope.launch { repository.save(note) }
+        persist(note)
     }
 
     // ---------------------------------------------------------------- settings
@@ -223,6 +258,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setDefaultTool(tool: ToolType) {
+        if (tool !in DefaultToolChoices) return
         settings = settings.copy(defaultTool = tool)
         settingsPreferences.edit().putString("default_tool", tool.name).apply()
     }
@@ -280,12 +316,13 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
                     ?: ThemeMode.SYSTEM.name,
             )
         }.getOrDefault(ThemeMode.SYSTEM)
-        val defaultTool = runCatching {
+        val savedTool = runCatching {
             ToolType.valueOf(
                 settingsPreferences.getString("default_tool", ToolType.BALL_PEN.name)
                     ?: ToolType.BALL_PEN.name,
             )
         }.getOrDefault(ToolType.BALL_PEN)
+        val defaultTool = savedTool.takeIf { it in DefaultToolChoices } ?: ToolType.BALL_PEN
         val defaultBackground = settingsPreferences
             .getString("default_page_background", null)
             ?.let { raw -> runCatching { PageBackground.valueOf(raw) }.getOrNull() }
@@ -350,6 +387,13 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setTextFormatting(formatting: TextFormatting) {
         editor = editor?.copy(textFormatting = formatting)
+    }
+
+    fun setStickyFontSize(size: Float) {
+        val clamped = size.coerceIn(16f, 48f)
+        savedStickyFontSize = clamped
+        preferences.edit().putFloat("sticky_font_size", clamped).apply()
+        editor = editor?.copy(stickyFontSize = clamped)
     }
 
     fun setToolWidth(width: Float) {
@@ -459,19 +503,10 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         val updated = editor ?: return
-        val currentIndex = current.pageIndex
-        val newIndex = when {
-            currentIndex == from -> target
-            from < currentIndex && target >= currentIndex -> currentIndex - 1
-            from > currentIndex && target <= currentIndex -> currentIndex + 1
-            else -> currentIndex
-        }.coerceIn(0, updated.note.pages.lastIndex)
-        val selectionIndex = when {
-            current.selectionPageIndex == from -> target
-            from < current.selectionPageIndex && target >= current.selectionPageIndex -> current.selectionPageIndex - 1
-            from > current.selectionPageIndex && target <= current.selectionPageIndex -> current.selectionPageIndex + 1
-            else -> current.selectionPageIndex
-        }.coerceIn(0, updated.note.pages.lastIndex)
+        val lastIndex = updated.note.pages.lastIndex
+        val newIndex = pageIndexAfterMove(current.pageIndex, from, target).coerceIn(0, lastIndex)
+        val selectionIndex = pageIndexAfterMove(current.selectionPageIndex, from, target)
+            .coerceIn(0, lastIndex)
         editor = updated.copy(pageIndex = newIndex, selectionPageIndex = selectionIndex)
     }
 
@@ -545,10 +580,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun endErase() {
         val baseline = eraseBaseline
         eraseBaseline = null
-        if (baseline != null && editor?.note?.pages !== baseline) {
-            pushUndo(baseline)
-            syncHistoryFlags()
-        }
+        finishContinuousEdit(baseline)
     }
 
     fun addText(
@@ -620,16 +652,6 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun deleteText(textId: String) {
-        val current = editor ?: return
-        val index = current.note.pages.indexOfFirst { page -> page.texts.any { it.id == textId } }
-        if (index < 0) return
-        commitPages { pages ->
-            pages.toMutableList().also {
-                it[index] = it[index].copy(texts = it[index].texts.filterNot { item -> item.id == textId })
-            }
-        }
-    }
 
     fun beginTextResize() {
         textResizeBaseline = editor?.note?.pages
@@ -651,10 +673,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun endTextResize() {
         val baseline = textResizeBaseline
         textResizeBaseline = null
-        if (baseline != null && editor?.note?.pages !== baseline) {
-            pushUndo(baseline)
-            syncHistoryFlags()
-        }
+        finishContinuousEdit(baseline)
     }
 
     // ---------------------------------------------------------------- sticky notes
@@ -665,6 +684,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         text: String,
         color: Long,
         width: Float,
+        fontSize: Float = 28f,
         pageIndexOverride: Int? = null,
     ) {
         if (text.isBlank()) return
@@ -679,6 +699,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             height = noteWidth * 0.72f,
             text = text,
             color = color,
+            fontSize = fontSize.coerceIn(16f, 48f),
         )
         commitPages { pages ->
             pages.toMutableList().also {
@@ -710,16 +731,6 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun deleteSticky(stickyId: String) {
-        val current = editor ?: return
-        val index = current.note.pages.indexOfFirst { page -> page.stickies.any { it.id == stickyId } }
-        if (index < 0) return
-        commitPages { pages ->
-            pages.toMutableList().also {
-                it[index] = it[index].copy(stickies = it[index].stickies.filterNot { note -> note.id == stickyId })
-            }
-        }
-    }
 
     fun beginStickyMove() {
         stickyMoveBaseline = editor?.note?.pages
@@ -742,10 +753,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun endStickyMove() {
         val baseline = stickyMoveBaseline
         stickyMoveBaseline = null
-        if (baseline != null && editor?.note?.pages !== baseline) {
-            pushUndo(baseline)
-            syncHistoryFlags()
-        }
+        finishContinuousEdit(baseline)
     }
 
     // ---------------------------------------------------------------- selection
@@ -849,10 +857,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun endSelectionMove() {
         val baseline = selectionMoveBaseline
         selectionMoveBaseline = null
-        if (baseline != null && editor?.note?.pages !== baseline) {
-            pushUndo(baseline)
-            syncHistoryFlags()
-        }
+        finishContinuousEdit(baseline)
     }
 
     // ---------------------------------------------------------------- history
@@ -926,8 +931,23 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     private fun replacePageWithoutHistory(index: Int, page: Page) {
         val current = editor ?: return
         val pages = current.note.pages.toMutableList().also { it[index] = page }
-        val updated = current.note.copy(pages = pages, updatedAt = System.currentTimeMillis())
-        editor = current.copy(note = updated)
+        editor = current.copy(note = current.note.copy(pages = pages))
+    }
+
+    /**
+     * Continuous gestures update the editor on every pointer event but only sync the library and
+     * schedule a save once, when the gesture ends.
+     */
+    private fun finishContinuousEdit(baseline: List<Page>?) {
+        val current = editor ?: return
+        if (baseline == null || current.note.pages === baseline) return
+        pushUndo(baseline)
+        val updated = current.note.copy(updatedAt = System.currentTimeMillis())
+        editor = current.copy(
+            note = updated,
+            canUndo = undoStack.isNotEmpty(),
+            canRedo = redoStack.isNotEmpty(),
+        )
         syncLibrary(updated)
         scheduleSave(updated)
     }
@@ -942,13 +962,30 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         library = library.copy(notes = notes.sortedByDescending { it.updatedAt })
     }
 
+    private fun persist(note: Note) {
+        viewModelScope.launch {
+            runCatching { repository.save(note) }
+                .onSuccess { saveError = null }
+                .onFailure { error ->
+                    saveError = "Could not save changes to this notebook."
+                    Log.e("NoteCraft", "Failed to save note ${note.id}", error)
+                }
+        }
+    }
+
     private fun scheduleSave(note: Note) {
         pendingSave = note
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(550)
-            repository.save(note)
-            if (pendingSave === note) {
+            val success = runCatching { repository.save(note) }
+                .onSuccess { saveError = null }
+                .onFailure { error ->
+                    saveError = "Could not save changes to this notebook."
+                    Log.e("NoteCraft", "Failed to save note ${note.id}", error)
+                }
+                .isSuccess
+            if (success && pendingSave === note) {
                 pendingSave = null
             }
         }

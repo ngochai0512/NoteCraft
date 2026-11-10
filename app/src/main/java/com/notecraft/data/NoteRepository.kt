@@ -1,6 +1,8 @@
 package com.notecraft.data
 
 import android.content.Context
+import android.util.Log
+import com.notecraft.model.InkBlack
 import com.notecraft.model.Note
 import com.notecraft.model.Page
 import com.notecraft.model.PageBackground
@@ -27,6 +29,8 @@ import org.json.JSONObject
  * Notes are persisted as individual JSON files under filesDir/notes.
  * This keeps the format inspectable and avoids a database dependency.
  */
+private const val NoteFormatVersion = 1
+
 class NoteRepository(context: Context) {
 
     private val directory = File(context.filesDir, "notes").apply { mkdirs() }
@@ -65,7 +69,7 @@ class NoteRepository(context: Context) {
     }
 
     private fun Note.toJson(): JSONObject = JSONObject().apply {
-        put("version", 1)
+        put("version", NoteFormatVersion)
         put("id", id)
         put("title", title)
         put("createdAt", createdAt)
@@ -132,6 +136,10 @@ class NoteRepository(context: Context) {
 
     private fun parseNote(json: JSONObject): Note {
         val now = System.currentTimeMillis()
+        val version = json.optInt("version", NoteFormatVersion)
+        if (version > NoteFormatVersion) {
+            Log.w("NoteCraftRepo", "Reading newer note format v$version; unknown fields are ignored")
+        }
         val pagesJson = json.optJSONArray("pages")
         val pages = buildList {
             if (pagesJson != null) {
@@ -207,7 +215,7 @@ class NoteRepository(context: Context) {
         return Stroke(
             id = json.optString("id").ifBlank { newId() },
             tool = parseTool(json.optString("tool")),
-            color = json.optLong("color", 0xFF23222BL),
+            color = json.optLong("color", InkBlack),
             width = json.optDouble("width", 4.0).toFloat(),
             points = points,
             shapeType = json.optString("shapeType").takeIf { it.isNotBlank() }?.let { raw ->
@@ -222,7 +230,7 @@ class NoteRepository(context: Context) {
         x = json.optDouble("x", 0.0).toFloat(),
         y = json.optDouble("y", 0.0).toFloat(),
         text = json.optString("text"),
-        color = json.optLong("color", 0xFF23222BL),
+        color = json.optLong("color", InkBlack),
         fontSize = json.optDouble("fontSize", 34.0).toFloat(),
         width = json.optDouble("width", 0.0).toFloat(),
         alignment = enumValueOrDefault(json.optString("alignment"), TextAlignment.LEFT),
