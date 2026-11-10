@@ -21,7 +21,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
-import androidx.core.graphics.withTranslation
+import androidx.core.graphics.withSave
 import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
@@ -33,7 +33,9 @@ import com.notecraft.model.TextAlignment
 import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.util.Bounds
+import com.notecraft.util.StickyTextPadding
 import com.notecraft.util.approximateBounds
+import com.notecraft.util.effectiveHeight
 import com.notecraft.util.selectionBounds
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -52,6 +54,19 @@ private val GridColor = Color(0xFFE2E8F0)
 private val MarginColor = Color(0xFFEF4444)
 private val DotColor = Color(0xFF94A3B8)
 private val SelectionColor = Color(0xFF2563EB)
+
+private data class CachedTextLayout(val spec: TextItem, val layout: StaticLayout)
+private data class CachedStickyLayout(val spec: StickyNote, val layout: StaticLayout)
+
+private val textLayoutCache = object : LinkedHashMap<String, CachedTextLayout>(32, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedTextLayout>?): Boolean =
+        size > 96
+}
+
+private val stickyLayoutCache = object : LinkedHashMap<String, CachedStickyLayout>(16, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedStickyLayout>?): Boolean =
+        size > 64
+}
 
 fun DrawScope.drawPageContent(
     page: Page,
@@ -881,8 +896,11 @@ private fun smoothPath(points: List<Offset>): Path {
     return path
 }
 
-fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
-    if (item.text.isBlank() || scale <= 0f) return
+private fun textLayoutFor(item: TextItem): StaticLayout {
+    synchronized(textLayoutCache) {
+        val cached = textLayoutCache[item.id]
+        if (cached != null && cached.spec == item) return cached.layout
+    }
     val displayText = item.displayText
     val typefaceStyle = when {
         item.formatting.bold && item.formatting.italic -> Typeface.BOLD_ITALIC
@@ -892,17 +910,64 @@ fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
     }
     val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = item.color.toInt()
-        textSize = item.fontSize * scale
+        textSize = item.fontSize
         typeface = Typeface.create("sans-serif", typefaceStyle)
         isUnderlineText = item.formatting.underline
     }
     val availableWidth = if (item.width > 0f) {
-        (item.width * scale).toInt().coerceAtLeast(1)
+        item.width.toInt().coerceAtLeast(1)
     } else {
         // Legacy text boxes keep their free-flowing width and only break on explicit newlines.
         val longestLine = displayText.split('\n').maxOfOrNull { line -> paint.measureText(line) } ?: 0f
         ceil(longestLine).toInt().coerceAtLeast(1)
     }
+    val alignment = when (item.alignment) {
+        TextAlignment.LEFT -> Layout.Alignment.ALIGN_NORMAL
+        TextAlignment.CENTER -> Layout.Alignment.ALIGN_CENTER
+        TextAlignment.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+    }
+    val layout = StaticLayout.Builder
+        .obtain(displayText, 0, displayText.length, paint, availableWidth)
+        .setAlignment(alignment)
+        .setIncludePad(false)
+        .setLineSpacing(0f, item.formatting.lineSpacing.coerceIn(0.8f, 2f))
+        .build()
+    synchronized(textLayoutCache) {
+        textLayoutCache[item.id] = CachedTextLayout(item, layout)
+    }
+    return layout
+}
+
+private fun stickyLayoutFor(note: StickyNote): StaticLayout {
+    synchronized(stickyLayoutCache) {
+        val cached = stickyLayoutCache[note.id]
+        if (cached != null && cached.spec == note) return cached.layout
+    }
+    val textColor = if (Color(note.color.toInt()).luminance() > 0.55f) {
+        Color(0xFF0F172A)
+    } else {
+        Color.White
+    }
+    val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = textColor.toArgb()
+        textSize = note.fontSize
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    }
+    val availableWidth = (note.width - StickyTextPadding * 2f).toInt().coerceAtLeast(1)
+    val layout = StaticLayout.Builder
+        .obtain(note.text, 0, note.text.length, paint, availableWidth)
+        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+        .setIncludePad(false)
+        .setLineSpacing(0f, 1.05f)
+        .build()
+    synchronized(stickyLayoutCache) {
+        stickyLayoutCache[note.id] = CachedStickyLayout(note, layout)
+    }
+    return layout
+}
+
+fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
+    if (item.text.isBlank() || scale <= 0f) return
     val highlightColor = item.formatting.highlightColor
     if (highlightColor != null) {
         val bounds = item.approximateBounds()
@@ -919,19 +984,11 @@ fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
             ),
         )
     }
-    val alignment = when (item.alignment) {
-        TextAlignment.LEFT -> Layout.Alignment.ALIGN_NORMAL
-        TextAlignment.CENTER -> Layout.Alignment.ALIGN_CENTER
-        TextAlignment.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
-    }
-    val layout = StaticLayout.Builder
-        .obtain(displayText, 0, displayText.length, paint, availableWidth)
-        .setAlignment(alignment)
-        .setIncludePad(false)
-        .setLineSpacing(0f, item.formatting.lineSpacing.coerceIn(0.8f, 2f))
-        .build()
+    val layout = textLayoutFor(item)
     val canvas = drawContext.canvas.nativeCanvas
-    canvas.withTranslation(origin.x + item.x * scale, origin.y + item.y * scale) {
+    canvas.withSave {
+        translate(origin.x + item.x * scale, origin.y + item.y * scale)
+        scale(scale, scale)
         layout.draw(this)
     }
 }
@@ -942,7 +999,11 @@ fun DrawScope.drawStickyNote(note: StickyNote, scale: Float, origin: Offset) {
     val left = origin.x + note.x * scale
     val top = origin.y + note.y * scale
     val width = note.width * scale
-    val height = note.height * scale
+    val layout = if (note.text.isNotBlank()) stickyLayoutFor(note) else null
+    val height = max(
+        note.height,
+        if (layout != null) layout.height + StickyTextPadding * 2f else note.height,
+    ) * scale
     val radius = CornerRadius((10f * scale).coerceAtLeast(2f), (10f * scale).coerceAtLeast(2f))
     val bodyColor = Color(note.color.toInt())
 
@@ -970,24 +1031,13 @@ fun DrawScope.drawStickyNote(note: StickyNote, scale: Float, origin: Offset) {
         drawPath(foldPath, Color.Black.copy(alpha = 0.08f))
     }
 
-    if (note.text.isNotBlank()) {
-        val padding = (16f * scale).coerceAtLeast(2f)
-        val textColor = if (bodyColor.luminance() > 0.55f) Color(0xFF0F172A) else Color.White
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = textColor.toArgb()
-            textSize = note.fontSize * scale
-            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        }
-        val availableWidth = (width - padding * 2f).toInt().coerceAtLeast(1)
-        val layout = StaticLayout.Builder
-            .obtain(note.text, 0, note.text.length, paint, availableWidth)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setIncludePad(false)
-            .setLineSpacing(0f, 1.05f)
-            .build()
+    if (layout != null) {
+        val padding = StickyTextPadding * scale
         val canvas = drawContext.canvas.nativeCanvas
         clipRect(left, top, left + width, top + height) {
-            canvas.withTranslation(left + padding, top + padding) {
+            canvas.withSave {
+                translate(left + padding, top + padding)
+                scale(scale, scale)
                 layout.draw(this)
             }
         }
@@ -1000,7 +1050,7 @@ fun DrawScope.drawStickyFrame(note: StickyNote, scale: Float, origin: Offset) {
     val left = origin.x + note.x * scale
     val top = origin.y + note.y * scale
     val width = note.width * scale
-    val height = note.height * scale
+    val height = note.effectiveHeight() * scale
     drawRoundRect(
         color = SelectionColor.copy(alpha = 0.55f),
         topLeft = Offset(left, top),
@@ -1039,7 +1089,8 @@ fun DrawScope.drawTextFrame(item: TextItem, scale: Float, origin: Offset) {
     drawCircle(color = SelectionColor, radius = 3f, center = handle)
 }
 
-fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {    val left = origin.x + bounds.left * scale
+fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {
+    val left = origin.x + bounds.left * scale
     val top = origin.y + bounds.top * scale
     val width = bounds.width * scale
     val height = bounds.height * scale
