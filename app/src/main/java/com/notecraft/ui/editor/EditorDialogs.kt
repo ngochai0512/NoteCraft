@@ -19,10 +19,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,10 +36,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.notecraft.model.PageBackground
 import com.notecraft.ui.theme.PaperSurface
+import com.notecraft.util.validPageRange
 
 @Composable
 fun PageBackgroundDialog(
@@ -320,4 +328,79 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBackgroundPrevi
             }
         }
     }
+}
+
+@Composable
+fun PageRangeDialog(
+    pageCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (IntRange) -> Unit,
+) {
+    var startText by remember { mutableStateOf("1") }
+    var endText by remember { mutableStateOf(pageCount.toString()) }
+    val start = startText.toIntOrNull()
+    val end = endText.toIntOrNull()
+    val range = if (start != null && end != null) {
+        validPageRange(start, end, pageCount)
+    } else {
+        null
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Export pages") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Choose an inclusive page range from 1 to $pageCount.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedTextField(
+                        value = startText,
+                        onValueChange = { startText = it.filter(Char::isDigit) },
+                        label = { Text("From") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = endText,
+                        onValueChange = { endText = it.filter(Char::isDigit) },
+                        label = { Text("To") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (range == null) {
+                    Text(
+                        text = "Enter a valid range within the notebook.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = range != null,
+                onClick = { range?.let(onConfirm) },
+            ) {
+                Text("Export")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }

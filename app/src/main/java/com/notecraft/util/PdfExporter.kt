@@ -15,7 +15,6 @@ import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import com.notecraft.model.Note
-import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.ui.editor.drawPageContent
@@ -37,25 +36,20 @@ object PdfExporter {
     private const val PAGE_BITMAP_WIDTH = 1240
     private const val PAGE_BITMAP_HEIGHT = 1754
 
-    fun fileName(title: String): String {
-        val cleaned = title
-            .removeSuffix(".pdf")
-            .replace(Regex("[\\\\/:*?\"<>|]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .ifBlank { "NoteCraft" }
-        return "$cleaned.pdf"
-    }
+    fun fileName(title: String): String = "${cleanedTitle(title)}.pdf"
 
-    fun pageFileName(title: String, pageNumber: Int): String {
-        val cleaned = title
-            .removeSuffix(".pdf")
-            .replace(Regex("[\\\\/:*?\"<>|]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .ifBlank { "NoteCraft" }
-        return "$cleaned - Page $pageNumber.pdf"
-    }
+    fun pageFileName(title: String, pageNumber: Int): String =
+        "${cleanedTitle(title)} - Page $pageNumber.pdf"
+
+    fun rangeFileName(title: String, startPage: Int, endPage: Int): String =
+        "${cleanedTitle(title)} - Pages $startPage-$endPage.pdf"
+
+    private fun cleanedTitle(title: String): String = title
+        .removeSuffix(".pdf")
+        .replace(Regex("[\\\\/:*?\"<>|]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .ifBlank { "NoteCraft" }
 
     suspend fun export(context: Context, uri: Uri, note: Note) =
         exportPages(context, uri, note.pages)

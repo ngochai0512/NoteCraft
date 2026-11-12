@@ -121,7 +121,8 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
     var expandedTool by remember { mutableStateOf<ToolType?>(null) }
     var showToolMenu by remember { mutableStateOf(false) }
     var exportNote by remember { mutableStateOf<Note?>(null) }
-    var exportPage by remember { mutableStateOf<Page?>(null) }
+    var exportPages by remember { mutableStateOf<List<Page>?>(null) }
+    var showPageRangeDialog by remember { mutableStateOf(false) }
     val pageSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -143,16 +144,16 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
     val pageExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf"),
     ) { uri ->
-        val page = exportPage
-        if (uri != null && page != null) {
-            Toast.makeText(context, "Exporting page…", Toast.LENGTH_SHORT).show()
+        val pages = exportPages
+        if (uri != null && pages != null) {
+            Toast.makeText(context, "Exporting pages…", Toast.LENGTH_SHORT).show()
             scope.launch {
-                runCatching { PdfExporter.exportPage(context, uri, page) }
-                    .onSuccess { Toast.makeText(context, "Page exported", Toast.LENGTH_SHORT).show() }
-                    .onFailure { Toast.makeText(context, "Could not export page", Toast.LENGTH_SHORT).show() }
+                runCatching { PdfExporter.exportPages(context, uri, pages) }
+                    .onSuccess { Toast.makeText(context, "Pages exported", Toast.LENGTH_SHORT).show() }
+                    .onFailure { Toast.makeText(context, "Could not export pages", Toast.LENGTH_SHORT).show() }
             }
         }
-        exportPage = null
+        exportPages = null
     }
 
     val configuration = LocalConfiguration.current
@@ -176,6 +177,7 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
 
     val dialogOpen = showRenameDialog ||
         showBackgroundDialog ||
+        showPageRangeDialog ||
         showColorPicker ||
         showDeleteNoteDialog ||
         showCoverDialog ||
@@ -386,11 +388,18 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                                 leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
                                 onClick = {
                                     showMenu = false
-                                    exportPage = editor.page
-                                    val pageNumber = editor.pageIndex + 1
+                                    exportPages = listOf(editor.page)
                                     pageExportLauncher.launch(
-                                        PdfExporter.pageFileName(editor.note.title, pageNumber),
+                                        PdfExporter.pageFileName(editor.note.title, editor.pageIndex + 1),
                                     )
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Export pages…") },
+                                leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    showPageRangeDialog = true
                                 },
                             )
                             DropdownMenuItem(
@@ -494,6 +503,9 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                 ErrorBanner(
                     message = message,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    actionLabel = "Retry",
+                    onAction = viewModel::retrySave,
+                    onDismiss = viewModel::dismissSaveError,
                 )
             }
             Box(
@@ -759,6 +771,20 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
         }
 
         null -> Unit
+    }
+
+    if (showPageRangeDialog) {
+        PageRangeDialog(
+            pageCount = editor.note.pageCount,
+            onDismiss = { showPageRangeDialog = false },
+            onConfirm = { range ->
+                exportPages = editor.note.pages.subList(range.first - 1, range.last)
+                showPageRangeDialog = false
+                pageExportLauncher.launch(
+                    PdfExporter.rangeFileName(editor.note.title, range.first, range.last),
+                )
+            },
+        )
     }
 
     if (showDeleteNoteDialog) {
