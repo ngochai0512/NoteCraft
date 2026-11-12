@@ -95,8 +95,8 @@ adb logcat -d -t 200 | grep -E "FATAL EXCEPTION|AndroidRuntime"
 Available AVDs in this environment may include `Pixel_10_Pro_XL` and `Pixel_Tablet`. Enable
 auto-rotate to test portrait and landscape; the app declares `fullUser` orientation.
 
-Pure logic tests live under `app/src/test/java` (`GeometryTest.kt`, `PageReorderTest.kt`, and
-`ModelTest.kt`). Run them with `./gradlew :app:testDebugUnitTest --offline`. Run a single class while
+Pure logic tests live under `app/src/test/java` (`GeometryTest.kt`, `PageReorderTest.kt`,
+`ModelTest.kt`, `NoteOrganizationTest.kt`, and `PageRangeTest.kt`). Run them with `./gradlew :app:testDebugUnitTest --offline`. Run a single class while
 iterating with `./gradlew :app:testDebugUnitTest --tests "com.notecraft.util.GeometryTest" --offline`.
 UI tests are not set up yet; do not add instrumentation or Robolectric dependencies without approval.
 Do not claim runtime verification unless you ran the app on a device or emulator.
@@ -263,7 +263,8 @@ Key rules:
   move it. The eraser removes sticky notes whole. Sticky notes are not part of lasso selection.
   The tool dropdown adjusts card width and text size; long text grows the card at render time.
 - Page-level export and sharing use the current page: export as PDF through the document picker or
-  share as PNG through `PageSharer`. Whole-notebook export remains the editor/library PDF action.
+  share as PNG through `PageSharer`. A page range can also be exported as PDF. Whole-notebook
+  export remains the editor/library PDF action.
 - The eraser has Partial and Object modes. Partial removes only the touched portion of a stroke and
   splits the remainder into pieces; Object removes whole strokes. Shapes and text are removed whole
   in either mode. Keep the `beginErase`/`endErase` undo baseline intact.
@@ -278,6 +279,9 @@ Key rules:
   the choice through `Note.coverTone`.
 - Notebooks can be pinned from the library card menu and sort above unpinned notebooks for every
   sort mode. Persist the flag through `Note.pinned`; do not change `updatedAt` just to reorder.
+- Folders are a single optional string and tags are a normalized list. Library search matches title,
+  folder, and tags; the filter menu narrows by folder or tag. Organization changes persist without
+  changing `updatedAt`.
 - Page bookmarks persist through `Page.bookmarked` and are toggled in the page drawer or editor
   menu. Drag-and-drop reordering in the drawer uses `movePageTo`.
 - PDF export uses the system document picker and rasterizes pages at 150 dpi. Do not change the
@@ -342,7 +346,8 @@ Before reporting a task complete, confirm all of the following:
   - sticky note add/edit/move/erase
   - recently used colors in a tool dropdown
   - ruler straight-line drawing
-  - current-page PDF export and PNG share
+  - current-page and page-range PDF export, plus PNG page sharing
+  - folder/tag organization, library filtering, and search by tag/folder
   - stylus-only finger rejection on a device with a stylus (if available)
   - two-finger vertical page scrolling, page indicator, and page-drawer jump
   - cover-tone chooser and persistence after relaunch
@@ -374,9 +379,9 @@ asking:
   constraint.
 - Sticky notes are moved and edited directly with the Sticky tool; they are not part of lasso
   selection.
-- Page-level export/share handles the current page only; whole-notebook export is PDF.
+- PNG sharing handles the current page; PDF export supports the current page, a page range, or the whole notebook.
 - Undo history is session-only.
-- Notes are local only: no sync, export, cloud backup, or sharing.
+- Notes are local only: no sync, cloud backup, import, or collaboration. PDF export and PNG page sharing are available.
 - Page navigation is continuous vertical scrolling with two-finger pan; there are no previous/next
   buttons. The thumbnail drawer jumps directly to a page.
 - Media insertion and collaboration are not implemented.

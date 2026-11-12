@@ -47,6 +47,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 
 - Create, rename, duplicate, and delete notes
 - Pin notebooks to keep them at the top of the library, regardless of the selected sort
+- Organize notebooks with flat folders and comma-separated tags, then filter the library by folder or tag
 - Add, duplicate, delete, and reorder pages by long-pressing a page thumbnail and dragging it
 - Star a page as a bookmark; the star is shown on its page-drawer thumbnail
 - Page backgrounds: blank, ruled, squared graph, dotted, Cornell, daily planner, weekly planner, music staff, storyboard and checklist
@@ -57,8 +58,8 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Notebook covers with spine crease, ribbon bookmark and label badge
 - Cover-tone chooser in the library menu and editor, with an automatic default
 - Export a notebook to PDF through the system document picker
-- Export the current page as PDF or share it as a PNG through the Android share sheet
-- Search notes by title
+- Export the current page or a page range as PDF, or share the current page as a PNG through the Android share sheet
+- Search notes by title, folder, and tag
 - Sort by recently updated, recently created, or title
 - Adaptive grid that shows more columns on larger screens
 
@@ -73,7 +74,6 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Default drawing tool and default paper for new pages
 - Toggle for the editor’s autosave indicator
 - Stylus-only mode that ignores finger drawing and palm touches while keeping two-finger pan and zoom
-- Cloud backup, handwriting search and audio notes are visible as **Coming soon** placeholders
 - Tool and app preferences persist across app launches
 
 ### Appearance
@@ -236,7 +236,7 @@ filesDir/notes/<note-id>.json
 
 Notes contain pages, and each page contains strokes, text items, and sticky notes. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
 
-A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A note may store `pinned` to keep it above unpinned notebooks in the library. A page may also store `bookmarked`. A stroke saves:
+A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A note may store `pinned` to keep it above unpinned notebooks, plus an optional `folder` and a `tags` array. A page may also store `bookmarked`. A stroke saves:
 
 - Tool type
 - ARGB color
@@ -272,7 +272,7 @@ This is intentionally a compact version of a full note-taking app:
 - The eraser removes the touched portion of a stroke (Partial) or the whole stroke (Object) rather than individual pixels; shapes and text are removed whole.
 - Text boxes wrap at their stored width, but height is automatic; there is no vertical box constraint.
 - Sticky notes are moved and edited directly with the Sticky tool; they are not part of lasso selection.
-- Page export and sharing work on the current page only; whole-notebook export remains PDF.
+- PNG sharing works on the current page; PDF export supports the current page, a page range, or the whole notebook.
 - Undo history lasts for the current app session only.
 - Notes are local to the device; there is no sync, cloud backup, or import yet. PDF export is available.
 - Continuous vertical scrolling uses a two-finger drag so one-finger drawing stays untouched, and the page stack has no previous/next buttons.
