@@ -35,11 +35,9 @@ val PaperIvory: Color = Color(0xFFFBF8F1)
 val DarkSlate: Color = Color(0xFF1E293B)
 val ChromeSurface: Color = Color(0xFFFFFFFF)
 val DividerRule: Color = Color(0xFFE5E7EB)
-val PaperLine: Color = Color(0xFFE2E8F0)
 
 val InkBlackColor: Color = Color(0xFF0F172A)
 val InkSlate: Color = Color(0xFF475569)
-val InkMuted: Color = Color(0xFF94A3B8)
 
 val EraserRed: Color = Color(0xFFEF4444)
 val MintGreen: Color = Color(0xFF10B981)
@@ -263,13 +261,6 @@ private val NoteCraftShapes = Shapes(
     extraLarge = RoundedCornerShape(24.dp),
 )
 
-object NoteCraftSpacing {
-    val xs = 4.dp
-    val sm = 8.dp
-    val md = 12.dp
-    val lg = 16.dp
-    val xl = 24.dp
-}
 
 @Composable
 fun NoteCraftTheme(

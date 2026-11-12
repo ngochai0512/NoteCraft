@@ -21,6 +21,3 @@ fun formatNoteDate(timestamp: Long): String {
         else -> dateTime.format(dateFormatter)
     }
 }
-
-fun formatFullDate(timestamp: Long): String =
-    Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(dateFormatter)

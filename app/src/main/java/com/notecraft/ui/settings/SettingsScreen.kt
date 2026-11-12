@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,16 +23,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Gesture
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -183,26 +179,6 @@ fun SettingsScreen(viewModel: NoteCraftViewModel) {
                     )
                 }
 
-                SettingsSection("Coming soon") {
-                    ComingSoonRow(
-                        icon = Icons.Outlined.CloudUpload,
-                        title = "Cloud backup",
-                        description = "Sync notebooks across devices with an optional account.",
-                    )
-                    SectionDivider()
-                    ComingSoonRow(
-                        icon = Icons.Outlined.TextFields,
-                        title = "Handwriting search",
-                        description = "Find words in handwritten notes, not just typed text.",
-                    )
-                    SectionDivider()
-                    ComingSoonRow(
-                        icon = Icons.Outlined.Mic,
-                        title = "Audio notes",
-                        description = "Record audio alongside your writing and replay it later.",
-                    )
-                }
-
                 SettingsSection("Storage") {
                     SettingRow(
                         icon = Icons.Outlined.Folder,
@@ -261,7 +237,6 @@ private fun SettingRow(
     title: String,
     description: String,
     onClick: (() -> Unit)? = null,
-    badge: String? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val clickModifier = if (onClick != null) {
@@ -299,10 +274,6 @@ private fun SettingRow(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (badge != null) {
-                    Spacer(Modifier.width(8.dp))
-                    ComingSoonBadge(badge)
-                }
             }
             Spacer(Modifier.size(2.dp))
             Text(
@@ -323,13 +294,11 @@ private fun SettingSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
-    badge: String? = null,
 ) {
     SettingRow(
         icon = icon,
         title = title,
         description = description,
-        badge = badge,
         trailing = {
             Switch(
                 checked = checked,
@@ -389,36 +358,6 @@ private fun <T> SettingDropdownRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ComingSoonRow(
-    icon: ImageVector,
-    title: String,
-    description: String,
-) {
-    SettingRow(
-        icon = icon,
-        title = title,
-        description = description,
-        badge = "COMING SOON",
-    )
-}
-
-@Composable
-private fun ComingSoonBadge(text: String) {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-        )
     }
 }
 
