@@ -230,8 +230,8 @@ fun TextItem.approximateBounds(): Bounds {
     val maxChars = lines.maxOfOrNull { it.length } ?: 0
     val boxWidth = if (width > 0f) width else maxChars * fontSize * 0.56f
     val lineHeight = fontSize * 1.28f * formatting.lineSpacing.coerceIn(0.8f, 2f)
-    val height = max(lines.size, 1) * lineHeight
-    return Bounds(x, y, x + boxWidth, y + height)
+    val measuredHeight = if (height > 0f) height else max(lines.size, 1) * lineHeight
+    return Bounds(x, y, x + boxWidth, y + measuredHeight)
 }
 
 /**

@@ -111,6 +111,22 @@ class GeometryTest {
     }
 
     @Test
+    fun storedTextHeightOverridesTheEstimate() {
+        val estimated = TextItem(
+            id = "estimated",
+            x = 0f,
+            y = 0f,
+            text = "one\ntwo",
+            color = 0xFF000000,
+            width = 300f,
+        )
+        val measured = estimated.copy(height = 999f)
+
+        assertEquals(999f, measured.approximateBounds().height, 0.001f)
+        assertTrue(measured.approximateBounds().height > estimated.approximateBounds().height)
+    }
+
+    @Test
     fun numberedListsDecorateOnlyNonBlankLines() {
         val text = TextItem(
             id = "numbered",
