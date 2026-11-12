@@ -15,6 +15,8 @@ import com.notecraft.model.TextFormatting
 import com.notecraft.model.TextItem
 import com.notecraft.model.TextListStyle
 import com.notecraft.model.ToolType
+import com.notecraft.util.normalizeFolder
+import com.notecraft.util.normalizeTags
 import com.notecraft.model.blankPage
 import com.notecraft.model.newId
 import java.io.File
@@ -40,7 +42,11 @@ class NoteRepository(context: Context) {
         mutex.withLock {
             directory.listFiles { file -> file.isFile && file.extension == "json" }
                 ?.mapNotNull { file ->
-                    runCatching { parseNote(JSONObject(file.readText())) }.getOrNull()
+                    runCatching { parseNote(JSONObject(file.readText())) }
+                        .onFailure { error ->
+                            Log.w("NoteCraftRepo", "Skipping unreadable note ${file.name}", error)
+                        }
+                        .getOrNull()
                 }
                 ?.sortedByDescending { it.updatedAt }
                 ?: emptyList()
@@ -62,8 +68,11 @@ class NoteRepository(context: Context) {
 
     suspend fun delete(noteId: String) = withContext(Dispatchers.IO) {
         mutex.withLock {
-            File(directory, "$noteId.json").delete()
+            val deleted = File(directory, "$noteId.json").delete()
             File(directory, "$noteId.json.tmp").delete()
+            if (!deleted && File(directory, "$noteId.json").exists()) {
+                Log.w("NoteCraftRepo", "Could not delete note file $noteId.json")
+            }
             Unit
         }
     }
@@ -75,6 +84,8 @@ class NoteRepository(context: Context) {
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
         if (coverTone != null) put("coverTone", coverTone)
+        if (folder != null) put("folder", folder)
+        if (tags.isNotEmpty()) put("tags", JSONArray(tags))
         if (pinned) put("pinned", true)
         put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
     }
@@ -114,6 +125,7 @@ class NoteRepository(context: Context) {
         put("color", color)
         put("fontSize", fontSize.toDouble())
         if (width > 0f) put("width", width.toDouble())
+        if (height > 0f) put("height", height.toDouble())
         if (alignment != TextAlignment.LEFT) put("alignment", alignment.name)
         if (formatting.bold) put("bold", true)
         if (formatting.italic) put("italic", true)
@@ -156,8 +168,20 @@ class NoteRepository(context: Context) {
             updatedAt = json.optLong("updatedAt", now),
             pages = pages,
             coverTone = json.optString("coverTone").takeIf { it.isNotBlank() },
+            folder = normalizeFolder(json.optString("folder")),
+            tags = parseTags(json.optJSONArray("tags")),
             pinned = json.optBoolean("pinned", false),
         )
+    }
+
+    private fun parseTags(json: JSONArray?): List<String> {
+        if (json == null) return emptyList()
+        val raw = buildList {
+            for (i in 0 until json.length()) {
+                json.optString(i).takeIf { it.isNotBlank() }?.let { add(it) }
+            }
+        }
+        return normalizeTags(raw.joinToString(","))
     }
 
     private fun parsePage(json: JSONObject): Page {
@@ -233,6 +257,7 @@ class NoteRepository(context: Context) {
         color = json.optLong("color", InkBlack),
         fontSize = json.optDouble("fontSize", 34.0).toFloat(),
         width = json.optDouble("width", 0.0).toFloat(),
+        height = json.optDouble("height", 0.0).toFloat(),
         alignment = enumValueOrDefault(json.optString("alignment"), TextAlignment.LEFT),
         formatting = TextFormatting(
             bold = json.optBoolean("bold", false),

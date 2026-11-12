@@ -46,6 +46,8 @@ class ModelTest {
         val original = newNote().copy(
             title = "Lecture",
             coverTone = "Navy Leather",
+            folder = "Class Notes",
+            tags = listOf("exam", "lecture"),
             pinned = true,
             pages = listOf(
                 blankPage(PageBackground.GRID).copy(
@@ -63,6 +65,8 @@ class ModelTest {
         assertNotEquals(original.pages.single().id, copy.pages.single().id)
         assertEquals("Lecture copy", copy.title)
         assertEquals("Navy Leather", copy.coverTone)
+        assertEquals("Class Notes", copy.folder)
+        assertEquals(listOf("exam", "lecture"), copy.tags)
         assertTrue(copy.pinned)
 
         val originalPage = original.pages.single()

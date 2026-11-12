@@ -33,6 +33,9 @@ import com.notecraft.model.duplicate
 import com.notecraft.model.newId
 import com.notecraft.model.newNote
 import com.notecraft.util.hitTest
+import com.notecraft.util.normalizeFolder
+import com.notecraft.util.TextMeasurer
+import com.notecraft.util.normalizeTags
 import com.notecraft.util.pageIndexAfterMove
 import com.notecraft.util.partialErase
 import kotlinx.coroutines.Job
@@ -110,6 +113,8 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     var saveError by mutableStateOf<String?>(null)
         private set
 
+    private var failedSaveNote: Note? = null
+
     private val undoStack = ArrayDeque<List<Page>>()
     private val redoStack = ArrayDeque<List<Page>>()
     private var eraseBaseline: List<Page>? = null
@@ -119,6 +124,15 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         reloadLibrary()
+    }
+
+    fun retrySave() {
+        val note = failedSaveNote ?: pendingSave ?: editor?.note ?: return
+        persist(note)
+    }
+
+    fun dismissSaveError() {
+        saveError = null
     }
 
     fun reloadLibrary() {
@@ -294,6 +308,23 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             editor = editor?.copy(note = updated)
         }
         scheduleSave(updated)
+    }
+
+    /** Update a notebook's folder and tags without changing its edit timestamp. */
+    fun updateNoteOrganization(noteId: String, folder: String?, tags: String) {
+        val existing = library.notes.firstOrNull { it.id == noteId }
+            ?: editor?.note?.takeIf { it.id == noteId }
+            ?: return
+        val updated = existing.copy(
+            folder = normalizeFolder(folder),
+            tags = normalizeTags(tags),
+        )
+        if (updated == existing) return
+        syncLibrary(updated)
+        if (editor?.note?.id == noteId) {
+            editor = editor?.copy(note = updated)
+        }
+        persist(updated)
     }
 
     /** Pin/unpin a notebook; pinned notebooks sort first in the library. */
@@ -606,7 +637,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             width = DefaultTextWidth,
             alignment = alignment,
             formatting = formatting,
-        )
+        ).let { it.copy(height = TextMeasurer.textHeight(it)) }
         commitPages { pages ->
             pages.toMutableList().also {
                 it[index] = it[index].copy(texts = it[index].texts + item)
@@ -642,7 +673,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
                                 text = text,
                                 alignment = alignment ?: item.alignment,
                                 formatting = formatting ?: item.formatting,
-                            )
+                            ).let { updated -> updated.copy(height = TextMeasurer.textHeight(updated)) }
                         } else {
                             item
                         }
@@ -664,7 +695,12 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val page = current.note.pages[index]
         val updated = page.copy(
             texts = page.texts.map { item ->
-                if (item.id == textId) item.copy(width = width.coerceIn(80f, PAGE_WIDTH * 2f)) else item
+                if (item.id == textId) {
+                    val updated = item.copy(width = width.coerceIn(80f, PAGE_WIDTH * 2f))
+                    updated.copy(height = TextMeasurer.textHeight(updated))
+                } else {
+                    item
+                }
             },
         )
         replacePageWithoutHistory(index, updated)
@@ -700,7 +736,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             text = text,
             color = color,
             fontSize = fontSize.coerceIn(16f, 48f),
-        )
+        ).let { it.copy(height = maxOf(it.height, TextMeasurer.stickyHeight(it))) }
         commitPages { pages ->
             pages.toMutableList().also {
                 it[index] = it[index].copy(stickies = it[index].stickies + note)
@@ -724,7 +760,12 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             pages.toMutableList().also {
                 it[index] = it[index].copy(
                     stickies = it[index].stickies.map { note ->
-                        if (note.id == stickyId) note.copy(text = text) else note
+                        if (note.id == stickyId) {
+                            val updated = note.copy(text = text)
+                            updated.copy(height = maxOf(updated.height, TextMeasurer.stickyHeight(updated)))
+                        } else {
+                            note
+                        }
                     },
                 )
             }
@@ -965,9 +1006,13 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     private fun persist(note: Note) {
         viewModelScope.launch {
             runCatching { repository.save(note) }
-                .onSuccess { saveError = null }
+                .onSuccess {
+                    saveError = null
+                    failedSaveNote = null
+                }
                 .onFailure { error ->
                     saveError = "Could not save changes to this notebook."
+                    failedSaveNote = note
                     Log.e("NoteCraft", "Failed to save note ${note.id}", error)
                 }
         }
@@ -979,9 +1024,13 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         saveJob = viewModelScope.launch {
             delay(550)
             val success = runCatching { repository.save(note) }
-                .onSuccess { saveError = null }
+                .onSuccess {
+                    saveError = null
+                    failedSaveNote = null
+                }
                 .onFailure { error ->
                     saveError = "Could not save changes to this notebook."
+                    failedSaveNote = note
                     Log.e("NoteCraft", "Failed to save note ${note.id}", error)
                 }
                 .isSuccess

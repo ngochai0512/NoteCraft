@@ -42,7 +42,10 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PictureAsPdf
@@ -96,6 +99,7 @@ import com.notecraft.ui.NoteCraftViewModel
 import com.notecraft.ui.components.ConfirmDialog
 import com.notecraft.ui.components.CoverToneDialog
 import com.notecraft.ui.components.ErrorBanner
+import com.notecraft.ui.components.NoteOrganizationDialog
 import com.notecraft.ui.components.NoteThumbnail
 import com.notecraft.ui.components.TextEntryDialog
 import com.notecraft.ui.theme.InkBlackColor
@@ -105,6 +109,7 @@ import com.notecraft.ui.theme.PaperIvory
 import com.notecraft.ui.theme.notebookToneFor
 import com.notecraft.util.PdfExporter
 import com.notecraft.util.formatNoteDate
+import com.notecraft.util.matchesLibrary
 import kotlinx.coroutines.launch
 
 private enum class NoteSort(val label: String) {
@@ -121,10 +126,14 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
     var showSearch by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(NoteSort.UPDATED) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showFilterMenu by remember { mutableStateOf(false) }
+    var folderFilter by remember { mutableStateOf<String?>(null) }
+    var tagFilter by remember { mutableStateOf<String?>(null) }
     var menuNoteId by remember { mutableStateOf<String?>(null) }
     var renameNote by remember { mutableStateOf<Note?>(null) }
     var deleteNote by remember { mutableStateOf<Note?>(null) }
     var coverNote by remember { mutableStateOf<Note?>(null) }
+    var organizeNote by remember { mutableStateOf<Note?>(null) }
     var exportNote by remember { mutableStateOf<Note?>(null) }
 
     val context = LocalContext.current
@@ -154,14 +163,24 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
     }
     val screenPadding = if (isTablet) 24.dp else 16.dp
 
-    val filtered = remember(library.notes, query, sort) {
+    val folders = remember(library.notes) {
+        library.notes.mapNotNull { it.folder }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
+    }
+    val allTags = remember(library.notes) {
+        library.notes.flatMap { it.tags }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
+    }
+    val filtered = remember(library.notes, query, sort, folderFilter, tagFilter) {
         val sortComparator = when (sort) {
             NoteSort.UPDATED -> compareByDescending<Note> { it.updatedAt }
             NoteSort.CREATED -> compareByDescending<Note> { it.createdAt }
             NoteSort.TITLE -> compareBy<Note> { it.title.lowercase() }
         }
         library.notes
-            .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+            .filter { it.matchesLibrary(query, folderFilter, tagFilter) }
             .sortedWith(
                 compareByDescending<Note> { it.pinned }.then(sortComparator),
             )
@@ -233,6 +252,63 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                         )
                     }
                     Box {
+                        IconButton(onClick = { showFilterMenu = true }) {
+                            Icon(Icons.Outlined.FilterList, contentDescription = "Filter notebooks")
+                        }
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("All notebooks") },
+                                leadingIcon = {
+                                    if (folderFilter == null && tagFilter == null) {
+                                        Icon(Icons.Outlined.Check, contentDescription = null)
+                                    } else {
+                                        Spacer(Modifier.size(24.dp))
+                                    }
+                                },
+                                onClick = {
+                                    folderFilter = null
+                                    tagFilter = null
+                                    showFilterMenu = false
+                                },
+                            )
+                            folders.forEach { folder ->
+                                DropdownMenuItem(
+                                    text = { Text("Folder · $folder") },
+                                    leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                                    trailingIcon = {
+                                        if (folderFilter == folder) {
+                                            Icon(Icons.Outlined.Check, contentDescription = null)
+                                        }
+                                    },
+                                    onClick = {
+                                        folderFilter = folder
+                                        tagFilter = null
+                                        showFilterMenu = false
+                                    },
+                                )
+                            }
+                            allTags.forEach { tag ->
+                                DropdownMenuItem(
+                                    text = { Text("Tag · $tag") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Label, contentDescription = null) },
+                                    trailingIcon = {
+                                        if (tagFilter == tag) {
+                                            Icon(Icons.Outlined.Check, contentDescription = null)
+                                        }
+                                    },
+                                    onClick = {
+                                        tagFilter = tag
+                                        folderFilter = null
+                                        showFilterMenu = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Box {
                         IconButton(onClick = { showSortMenu = true }) {
                             Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "Sort notes")
                         }
@@ -295,7 +371,7 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .focusRequester(focusRequester),
-                    placeholder = { Text("Search notebooks") },
+                    placeholder = { Text("Search titles, tags, folders") },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
@@ -323,12 +399,17 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                 ErrorBanner(
                     message = message,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    actionLabel = "Retry",
+                    onAction = viewModel::retrySave,
+                    onDismiss = viewModel::dismissSaveError,
                 )
             }
             library.error?.takeIf { library.notes.isNotEmpty() }?.let { message ->
                 ErrorBanner(
                     message = message,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    actionLabel = "Retry",
+                    onAction = viewModel::reloadLibrary,
                 )
             }
 
@@ -374,15 +455,30 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            text = "No notes match \"$query\"",
+                            text = when {
+                                query.isNotBlank() -> "No notes match \"$query\""
+                                folderFilter != null -> "No notes in $folderFilter"
+                                tagFilter != null -> "No notes tagged $tagFilter"
+                                else -> "No notes match this filter"
+                            },
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "Try a different search term.",
+                            text = "Try a different search term or clear the filter.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (folderFilter != null || tagFilter != null) {
+                            TextButton(
+                                onClick = {
+                                    folderFilter = null
+                                    tagFilter = null
+                                },
+                            ) {
+                                Text("Clear filter")
+                            }
+                        }
                     }
                 }
 
@@ -416,6 +512,10 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                                 onCover = {
                                     menuNoteId = null
                                     coverNote = note
+                                },
+                                onOrganize = {
+                                    menuNoteId = null
+                                    organizeNote = note
                                 },
                                 onTogglePin = {
                                     menuNoteId = null
@@ -468,6 +568,18 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
             onSelect = { tone ->
                 viewModel.setNoteCover(note.id, tone)
                 coverNote = null
+            },
+        )
+    }
+
+    organizeNote?.let { note ->
+        NoteOrganizationDialog(
+            initialFolder = note.folder,
+            initialTags = note.tags,
+            onDismiss = { organizeNote = null },
+            onConfirm = { folder, tags ->
+                viewModel.updateNoteOrganization(note.id, folder, tags)
+                organizeNote = null
             },
         )
     }
@@ -682,6 +794,7 @@ private fun NoteCard(
     onRename: () -> Unit,
     onDuplicate: () -> Unit,
     onCover: () -> Unit,
+    onOrganize: () -> Unit,
     onTogglePin: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
@@ -844,6 +957,11 @@ private fun NoteCard(
                         onClick = onCover,
                     )
                     DropdownMenuItem(
+                        text = { Text("Tags & folder") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Label, contentDescription = null) },
+                        onClick = onOrganize,
+                    )
+                    DropdownMenuItem(
                         text = { Text("Duplicate") },
                         leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
                         onClick = onDuplicate,
@@ -893,6 +1011,24 @@ private fun NoteCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = InkSlate,
                     )
+                    val organization = remember(note.folder, note.tags) {
+                        buildList {
+                            note.folder?.let { add(it) }
+                            if (note.tags.isNotEmpty()) {
+                                add(note.tags.take(2).joinToString(" ") { "#$it" })
+                            }
+                        }.joinToString(" · ")
+                    }
+                    if (organization.isNotEmpty()) {
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            text = organization,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = InkSlate,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }

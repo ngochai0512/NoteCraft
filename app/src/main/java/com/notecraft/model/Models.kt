@@ -189,6 +189,8 @@ data class TextItem(
     val fontSize: Float = 34f,
     /** Width of the text box in page units. `0f` means a legacy auto-width box. */
     val width: Float = 0f,
+    /** Measured box height in page units. `0f` falls back to an estimate. */
+    val height: Float = 0f,
     val alignment: TextAlignment = TextAlignment.LEFT,
     val formatting: TextFormatting = TextFormatting(),
 ) {
@@ -226,6 +228,8 @@ data class Note(
     val updatedAt: Long,
     val pages: List<Page>,
     val coverTone: String? = null,
+    val folder: String? = null,
+    val tags: List<String> = emptyList(),
     val pinned: Boolean = false,
 ) {
     val pageCount: Int get() = pages.size
