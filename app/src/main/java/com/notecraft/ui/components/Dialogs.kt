@@ -296,18 +296,36 @@ private fun TextFormattingControls(
 fun ErrorBanner(
     message: String,
     modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    onDismiss: (() -> Unit)? = null,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.errorContainer,
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-        )
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f),
+            )
+            if (actionLabel != null && onAction != null) {
+                TextButton(onClick = onAction) {
+                    Text(actionLabel, color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+            if (onDismiss != null) {
+                TextButton(onClick = onDismiss) {
+                    Text("Dismiss", color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+        }
     }
 }
 

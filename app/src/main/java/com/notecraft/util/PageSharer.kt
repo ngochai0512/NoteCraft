@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.notecraft.model.Page
 import java.io.File
@@ -61,8 +62,8 @@ object PageSharer {
     private fun pruneOldFiles(directory: File) {
         val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
         directory.listFiles()?.forEach { file ->
-            if (file.isFile && file.lastModified() < cutoff) {
-                file.delete()
+            if (file.isFile && file.lastModified() < cutoff && !file.delete()) {
+                Log.w("NoteCraftShare", "Could not prune shared page ${file.name}")
             }
         }
     }

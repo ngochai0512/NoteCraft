@@ -235,10 +235,14 @@ fun DrawingCanvas(
         if (transform.scale <= 0f) return 0 to Offset.Zero
         val rawX = (position.x - transform.origin.x) / transform.scale
         val rawY = (position.y - transform.origin.y) / transform.scale
-        val index = (rawY / (PAGE_HEIGHT + PageGap)).toInt()
+        val pitch = PAGE_HEIGHT + PageGap
+        val index = (rawY / pitch).toInt()
             .coerceIn(0, currentPages.lastIndex.coerceAtLeast(0))
-        val localY = rawY - index * (PAGE_HEIGHT + PageGap)
-        return index to Offset(rawX, localY)
+        val localY = rawY - index * pitch
+        if (localY > PAGE_HEIGHT && index < currentPages.lastIndex) {
+            return (index + 1) to Offset(rawX, 0f)
+        }
+        return index to Offset(rawX, localY.coerceIn(0f, PAGE_HEIGHT))
     }
 
     fun visiblePageIndex(): Int {
@@ -289,6 +293,20 @@ fun DrawingCanvas(
         )
     }
 
+    fun clampPan(candidate: Offset, scale: Float): Offset {
+        if (scale <= 0f) return candidate
+        val count = currentPages.size.coerceAtLeast(1)
+        val documentHeight = count * PAGE_HEIGHT * scale +
+            (count - 1).coerceAtLeast(0) * PageGap * scale
+        if (documentHeight <= canvasSize.height) {
+            return Offset(candidate.x, 0f)
+        }
+        val baseTop = (canvasSize.height - PAGE_HEIGHT * scale) / 2f
+        val minY = (canvasSize.height - documentHeight) - baseTop
+        val maxY = -baseTop
+        return Offset(candidate.x, candidate.y.coerceIn(minY, maxY))
+    }
+
     fun applyTransform(focus: Offset, panChange: Offset, zoomChange: Float) {
         if (canvasSize.width == 0 || canvasSize.height == 0) return
         val transform = currentTransform()
@@ -301,7 +319,7 @@ fun DrawingCanvas(
             focus.y - focusInPage.y * newScale - (canvasSize.height - PAGE_HEIGHT * newScale) / 2f,
         )
         viewport.zoom = newZoom
-        viewport.pan = candidate
+        viewport.pan = clampPan(candidate, newScale)
         notifyVisiblePage()
     }
 
@@ -318,7 +336,7 @@ fun DrawingCanvas(
     fun resetViewport() {
         flingHandle.job?.cancel()
         viewport.zoom = 1f
-        viewport.pan = Offset.Zero
+        viewport.pan = clampPan(Offset.Zero, baseScale(canvasSize))
         notifyVisiblePage()
     }
 
@@ -330,9 +348,12 @@ fun DrawingCanvas(
         val target = pageIndex.coerceIn(0, currentPages.lastIndex)
         val transform = currentTransform()
         if (transform.scale <= 0f) return@LaunchedEffect
-        viewport.pan = Offset(
-            viewport.pan.x,
-            -target * (PAGE_HEIGHT + PageGap) * transform.scale,
+        viewport.pan = clampPan(
+            Offset(
+                viewport.pan.x,
+                -target * (PAGE_HEIGHT + PageGap) * transform.scale,
+            ),
+            transform.scale,
         )
         lastVisiblePage.value = target
         visiblePageChanged(target)
@@ -746,11 +767,15 @@ fun DrawingCanvas(
                             val velocity = velocityTracker.calculateVelocity()
                             if (!zoomedDuringGesture && abs(velocity.y) > 500f) {
                                 val basePan = viewport.pan
+                                val flingScale = currentTransform().scale
                                 flingHandle.job?.cancel()
                                 flingHandle.job = scope.launch {
                                     val anim = Animatable(0f)
                                     anim.animateDecay(velocity.y, exponentialDecay()) {
-                                        viewport.pan = Offset(basePan.x, basePan.y + value)
+                                        viewport.pan = clampPan(
+                                            Offset(basePan.x, basePan.y + value),
+                                            flingScale,
+                                        )
                                         notifyVisiblePage()
                                     }
                                 }
