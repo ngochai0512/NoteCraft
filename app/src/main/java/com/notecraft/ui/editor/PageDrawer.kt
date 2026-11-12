@@ -259,10 +259,14 @@ private fun PageTile(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(4.dp)
-                    .size(26.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
-                    .clickable(onClick = onToggleBookmark),
+                    .clickable(
+                        onClickLabel = if (page.bookmarked) "Remove bookmark" else "Bookmark page",
+                        role = androidx.compose.ui.semantics.Role.Button,
+                        onClick = onToggleBookmark,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -280,7 +284,7 @@ private fun PageTile(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(4.dp)
-                    .size(26.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.80f)),
                 contentAlignment = Alignment.Center,

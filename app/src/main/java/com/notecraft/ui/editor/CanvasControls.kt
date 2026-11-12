@@ -174,7 +174,7 @@ private fun ZoomControlButton(
     onClick: () -> Unit,
     active: Boolean = false,
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
         Icon(
             icon,
             contentDescription = description,
@@ -195,7 +195,7 @@ internal fun RulerHandle(
 ) {
     Surface(
         modifier = modifier
-            .size(44.dp)
+            .size(48.dp)
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()

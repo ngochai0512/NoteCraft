@@ -419,7 +419,7 @@ private fun ToolButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(if (showLabel) 44.dp else 40.dp)
+            .width(48.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale

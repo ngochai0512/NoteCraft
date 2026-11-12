@@ -52,6 +52,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.notecraft.model.EraserMode
@@ -207,7 +211,7 @@ internal fun ToolOptions(
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val rows = InkPalette.chunked(6)
+                val rows = InkPalette.chunked(5)
                 rows.forEachIndexed { index, row ->
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -383,6 +387,9 @@ internal fun ToolOptions(
     }
 }
 
+private fun colorLabel(color: Long): String =
+    "#" + (color and 0xFFFFFF).toString(16).padStart(6, '0').uppercase()
+
 @Composable
 private fun ColorSwatch(
     color: Long,
@@ -392,28 +399,42 @@ private fun ColorSwatch(
     val swatchColor = Color(color.toInt())
     Box(
         modifier = Modifier
-            .size(24.dp)
-            .clip(CircleShape)
-            .background(swatchColor)
-            .border(
-                width = if (selected) 2.5.dp else 1.dp,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
-                },
-                shape = CircleShape,
+            .size(48.dp)
+            .clickable(
+                onClickLabel = "Select colour",
+                role = Role.RadioButton,
+                onClick = onClick,
             )
-            .clickable(onClick = onClick),
+            .semantics {
+                contentDescription = colorLabel(color)
+                this.selected = selected
+            },
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) {
-            Icon(
-                Icons.Outlined.Check,
-                contentDescription = null,
-                tint = if (swatchColor.luminance() > 0.55f) Color.Black else Color.White,
-                modifier = Modifier.size(13.dp),
-            )
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(swatchColor)
+                .border(
+                    width = if (selected) 2.5.dp else 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
+                    },
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    Icons.Outlined.Check,
+                    contentDescription = null,
+                    tint = if (swatchColor.luminance() > 0.55f) Color.Black else Color.White,
+                    modifier = Modifier.size(13.dp),
+                )
+            }
         }
     }
 }
@@ -425,27 +446,38 @@ private fun CustomColorSwatch(
 ) {
     Box(
         modifier = Modifier
-            .size(24.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(
-                width = if (selected) 2.5.dp else 1.dp,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
-                },
-                shape = CircleShape,
+            .size(48.dp)
+            .clickable(
+                onClickLabel = "Choose a custom colour",
+                role = Role.Button,
+                onClick = onClick,
             )
-            .clickable(onClick = onClick),
+            .semantics { contentDescription = "Custom colour" },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            Icons.Outlined.Palette,
-            contentDescription = "Custom color",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(14.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(
+                    width = if (selected) 2.5.dp else 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
+                    },
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Outlined.Palette,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp),
+            )
+        }
     }
 }
 
@@ -525,20 +557,34 @@ private fun WidthPreset(
 ) {
     Box(
         modifier = Modifier
-            .size(27.dp)
-            .clip(CircleShape)
-            .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            .size(48.dp)
+            .clickable(
+                onClickLabel = "Use width ${width.roundToInt()}",
+                role = Role.RadioButton,
+                onClick = onClick,
             )
-            .clickable(onClick = onClick),
+            .semantics {
+                contentDescription = "Width ${width.roundToInt()}"
+                this.selected = selected
+            },
         contentAlignment = Alignment.Center,
     ) {
+        Box(
+            modifier = Modifier
+                .size(27.dp)
+                .clip(CircleShape)
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
         Canvas(modifier = Modifier.size(19.dp)) {
             val fraction = (width / maxWidth).coerceIn(0.05f, 1f)
             drawCircle(
                 color = Color(color.toInt()),
                 radius = (1.5f + fraction * 7f).dp.toPx(),
             )
+        }
         }
     }
 }
@@ -570,7 +616,7 @@ internal fun SelectionOptions(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp),
+            .height(48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -596,9 +642,13 @@ internal fun SelectionOptions(
         }
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(48.dp)
                 .clip(CircleShape)
-                .clickable(onClick = onClear),
+                .clickable(
+                    onClickLabel = "Clear selection",
+                    role = Role.Button,
+                    onClick = onClear,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -660,35 +710,48 @@ fun ColorPickerDialog(
                     modifier = Modifier.padding(vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    InkPalette.chunked(6).forEach { row ->
+                    InkPalette.chunked(5).forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             row.forEach { swatch ->
                                 val selected = previewLong == swatch
                                 val swatchColor = Color(swatch.toInt())
                                 Box(
                                     modifier = Modifier
-                                        .size(26.dp)
-                                        .clip(CircleShape)
-                                        .background(swatchColor)
-                                        .border(
-                                            width = if (selected) 2.5.dp else 1.dp,
-                                            color = if (selected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
+                                        .size(44.dp)
+                                        .clickable(
+                                            onClickLabel = "Use colour ${colorLabel(swatch)}",
+                                            role = Role.RadioButton,
+                                            onClick = {
+                                                val hsv = FloatArray(3).also {
+                                                    AndroidColor.colorToHSV(swatch.toInt(), it)
+                                                }
+                                                hue = hsv[0]
+                                                saturation = hsv[1]
+                                                brightness = hsv[2]
                                             },
-                                            shape = CircleShape,
                                         )
-                                        .clickable {
-                                            val hsv = FloatArray(3).also {
-                                                AndroidColor.colorToHSV(swatch.toInt(), it)
-                                            }
-                                            hue = hsv[0]
-                                            saturation = hsv[1]
-                                            brightness = hsv[2]
+                                        .semantics {
+                                            contentDescription = colorLabel(swatch)
+                                            this.selected = selected
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(CircleShape)
+                                            .background(swatchColor)
+                                            .border(
+                                                width = if (selected) 2.5.dp else 1.dp,
+                                                color = if (selected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
+                                                },
+                                                shape = CircleShape,
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
                                     if (selected) {
                                         Icon(
                                             Icons.Outlined.Check,
@@ -696,6 +759,7 @@ fun ColorPickerDialog(
                                             tint = if (swatchColor.luminance() > 0.55f) Color.Black else Color.White,
                                             modifier = Modifier.size(14.dp),
                                         )
+                                    }
                                     }
                                 }
                             }
