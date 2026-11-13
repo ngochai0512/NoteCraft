@@ -16,8 +16,10 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.dp
 import androidx.core.graphics.withSave
 import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
@@ -45,13 +47,47 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
-private val PaperColor = Color(0xFFFCFCFA)
-private val PaperWarm = Color(0xFFFBF8F1)
-private val RuleColor = Color(0xFFE2E8F0)
-private val GridColor = Color(0xFFE2E8F0)
-private val MarginColor = Color(0xFFEF4444)
-private val DotColor = Color(0xFF94A3B8)
+private val LightPaperTop = Color(0xFFFCFCFA)
+private val LightPaperWarm = Color(0xFFFBF8F1)
+private val LightRule = Color(0xFFE2E8F0)
+private val LightGrid = Color(0xFFE2E8F0)
+private val LightMargin = Color(0xFFEF4444)
+private val LightDot = Color(0xFF94A3B8)
+
+private val DarkPaperTop = Color(0xFF1B2432)
+private val DarkPaperWarm = Color(0xFF141B26)
+private val DarkRule = Color(0xFF3A4A5F)
+private val DarkGrid = Color(0xFF3A4A5F)
+private val DarkMargin = Color(0xFF9F3B3B)
+private val DarkDot = Color(0xFF66788F)
+
+private val TemplateLabelColor = Color(0xFF94A3B8)
 private val SelectionColor = Color(0xFF2563EB)
+private val SelectionColorDark = Color(0xFF60A5FA)
+
+/** Paper/rule tint for the darkest ink that still needs to read on the dark surface. */
+private val DarkInkMix = Color(0xFFEDF1F8)
+
+private fun selectionColorFor(darkPaper: Boolean): Color =
+    if (darkPaper) SelectionColorDark else SelectionColor
+
+/**
+ * Maps an authored ink color to the palette used on the current paper. On dark paper, dark inks
+ * are lifted toward a warm white so black notes stay readable; light inks keep their hue.
+ * Stored colors are never changed, so switching themes does not modify the note.
+ */
+internal fun paperInkColor(argb: Long, darkPaper: Boolean): Color {
+    val color = Color(argb)
+    if (!darkPaper) return color
+    if (color.luminance() >= 0.62f) return color
+    val mix = 0.84f
+    return Color(
+        red = color.red + (DarkInkMix.red - color.red) * mix,
+        green = color.green + (DarkInkMix.green - color.green) * mix,
+        blue = color.blue + (DarkInkMix.blue - color.blue) * mix,
+        alpha = color.alpha,
+    )
+}
 
 private data class CachedTextLayout(val spec: TextItem, val layout: StaticLayout)
 private data class CachedStickyLayout(val spec: StickyNote, val layout: StaticLayout)
@@ -76,36 +112,38 @@ fun DrawScope.drawPageContent(
     drawPaper: Boolean = true,
     drawBackground: Boolean = true,
     clip: Boolean = true,
+    darkPaper: Boolean = false,
 ) {
     val pageWidth = PAGE_WIDTH * scale
     val pageHeight = PAGE_HEIGHT * scale
     if (drawPaper) {
         drawRect(
-            brush = Brush.verticalGradient(listOf(PaperColor, PaperWarm)),
+            brush = paperBrush(darkPaper),
             topLeft = origin,
             size = Size(pageWidth, pageHeight),
         )
     }
     val content: DrawScope.() -> Unit = {
-        if (drawBackground) drawPageBackground(page.background, scale, origin)
+        if (drawBackground) drawPageBackground(page.background, scale, origin, darkPaper = darkPaper)
         page.strokes.forEach { stroke ->
             val selected = stroke.id in selectedStrokeIds
             if (selected) {
-                drawStrokeBody(stroke, scale, origin, overrideColor = SelectionColor, alpha = 0.22f, extraWidth = 10f)
+                drawStrokeBody(
+                    stroke = stroke,
+                    scale = scale,
+                    origin = origin,
+                    overrideColor = selectionColorFor(darkPaper),
+                    alpha = 0.22f,
+                    extraWidth = 10f,
+                )
             }
-            drawStrokeBody(stroke, scale, origin)
+            drawStrokeBody(stroke, scale, origin, darkPaper = darkPaper)
         }
         page.texts.forEach { item ->
-            drawTextItem(item, scale, origin)
+            drawTextItem(item, scale, origin, darkPaper = darkPaper)
         }
         page.stickies.forEach { note ->
             drawStickyNote(note, scale, origin)
-        }
-        if (drawSelection && (selectedStrokeIds.isNotEmpty() || selectedTextIds.isNotEmpty())) {
-            val bounds = selectionBounds(page, selectedStrokeIds, selectedTextIds)
-            if (bounds != null) {
-                drawSelectionFrame(bounds, scale, origin)
-            }
         }
     }
     if (clip) {
@@ -119,14 +157,28 @@ fun DrawScope.drawPageContent(
     } else {
         content()
     }
+    // Handles sit outside the page bounds, so the selection frame is drawn unclipped.
+    if (drawSelection && (selectedStrokeIds.isNotEmpty() || selectedTextIds.isNotEmpty())) {
+        val bounds = selectionBounds(page, selectedStrokeIds, selectedTextIds)
+        if (bounds != null) {
+            drawSelectionFrame(bounds, scale, origin, darkPaper = darkPaper)
+        }
+    }
 }
+
+private fun paperBrush(darkPaper: Boolean): Brush =
+    if (darkPaper) {
+        Brush.verticalGradient(listOf(DarkPaperTop, DarkPaperWarm))
+    } else {
+        Brush.verticalGradient(listOf(LightPaperTop, LightPaperWarm))
+    }
 
 /**
  * Fills the whole visible editor area with the paper surface. Used by the editor so the paper is
  * edge-to-edge instead of a sheet resting on a desk.
  */
-fun DrawScope.drawPaperSurface() {
-    drawRect(brush = Brush.verticalGradient(listOf(PaperColor, PaperWarm)))
+fun DrawScope.drawPaperSurface(darkPaper: Boolean = false) {
+    drawRect(brush = paperBrush(darkPaper))
 }
 
 /**
@@ -144,12 +196,17 @@ fun DrawScope.drawPageBackground(
     top: Float = origin.y,
     right: Float = origin.x + PAGE_WIDTH * scale,
     bottom: Float = origin.y + PAGE_HEIGHT * scale,
+    darkPaper: Boolean = false,
 ) {
     if (scale <= 0f || right <= left || bottom <= top) return
     val pageLeft = origin.x
     val pageTop = origin.y
     val pageRight = origin.x + PAGE_WIDTH * scale
     val pageBottom = origin.y + PAGE_HEIGHT * scale
+    val ruleColor = if (darkPaper) DarkRule else LightRule
+    val gridColor = if (darkPaper) DarkGrid else LightGrid
+    val marginColor = if (darkPaper) DarkMargin else LightMargin
+    val dotColor = if (darkPaper) DarkDot else LightDot
     when (background) {
         PageBackground.BLANK -> Unit
 
@@ -160,7 +217,7 @@ fun DrawScope.drawPageBackground(
             var y = origin.y + spacing * ceil((top - origin.y) / spacing)
             while (y <= bottom) {
                 drawLine(
-                    color = RuleColor.copy(alpha = 0.65f),
+                    color = ruleColor.copy(alpha = 0.65f),
                     start = Offset(left, y),
                     end = Offset(right, y),
                     strokeWidth = lineWidth,
@@ -170,7 +227,7 @@ fun DrawScope.drawPageBackground(
             val marginX = origin.x + 90f * scale
             if (marginX in left..right) {
                 drawLine(
-                    color = MarginColor.copy(alpha = 0.30f),
+                    color = marginColor.copy(alpha = 0.30f),
                     start = Offset(marginX, top),
                     end = Offset(marginX, bottom),
                     strokeWidth = lineWidth,
@@ -185,7 +242,7 @@ fun DrawScope.drawPageBackground(
             var x = origin.x + spacing * ceil((left - origin.x) / spacing)
             while (x <= right) {
                 drawLine(
-                    color = GridColor.copy(alpha = 0.55f),
+                    color = gridColor.copy(alpha = 0.55f),
                     start = Offset(x, top),
                     end = Offset(x, bottom),
                     strokeWidth = lineWidth,
@@ -195,7 +252,7 @@ fun DrawScope.drawPageBackground(
             var y = origin.y + spacing * ceil((top - origin.y) / spacing)
             while (y <= bottom) {
                 drawLine(
-                    color = GridColor.copy(alpha = 0.55f),
+                    color = gridColor.copy(alpha = 0.55f),
                     start = Offset(left, y),
                     end = Offset(right, y),
                     strokeWidth = lineWidth,
@@ -213,7 +270,7 @@ fun DrawScope.drawPageBackground(
                 var y = origin.y + spacing * ceil((top - origin.y) / spacing)
                 while (y <= bottom) {
                     drawCircle(
-                        color = DotColor.copy(alpha = 0.45f),
+                        color = dotColor.copy(alpha = 0.45f),
                         radius = radius,
                         center = Offset(x, y),
                     )
@@ -234,7 +291,7 @@ fun DrawScope.drawPageBackground(
             var y = topLineY + spacing
             while (y < summaryY) {
                 drawLine(
-                    color = RuleColor.copy(alpha = 0.45f),
+                    color = ruleColor.copy(alpha = 0.45f),
                     start = Offset(left, y),
                     end = Offset(right, y),
                     strokeWidth = lineWidth,
@@ -244,7 +301,7 @@ fun DrawScope.drawPageBackground(
 
             listOf(topLineY, summaryY).forEach { lineY ->
                 drawLine(
-                    color = GridColor.copy(alpha = 0.85f),
+                    color = gridColor.copy(alpha = 0.85f),
                     start = Offset(left, lineY),
                     end = Offset(right, lineY),
                     strokeWidth = lineWidth * 1.2f,
@@ -252,7 +309,7 @@ fun DrawScope.drawPageBackground(
             }
             if (cueX in left..right) {
                 drawLine(
-                    color = MarginColor.copy(alpha = 0.45f),
+                    color = marginColor.copy(alpha = 0.45f),
                     start = Offset(cueX, topLineY),
                     end = Offset(cueX, summaryY),
                     strokeWidth = lineWidth * 1.2f,
@@ -299,33 +356,33 @@ fun DrawScope.drawPageBackground(
                     size = 11f,
                 )
                 drawRoundRect(
-                    color = GridColor.copy(alpha = 0.65f),
+                    color = gridColor.copy(alpha = 0.65f),
                     topLeft = Offset(innerLeft, headerTop),
                     size = Size(contentWidth, headerBottom - headerTop),
                     cornerRadius = CornerRadius(10f * scale, 10f * scale),
                     style = DrawStroke(width = lineWidth),
                 )
                 drawLine(
-                    color = GridColor.copy(alpha = 0.65f),
+                    color = gridColor.copy(alpha = 0.65f),
                     start = Offset(innerLeft + contentWidth * 0.52f, headerTop),
                     end = Offset(innerLeft + contentWidth * 0.52f, headerBottom),
                     strokeWidth = lineWidth,
                 )
                 drawLine(
-                    color = RuleColor.copy(alpha = 0.55f),
+                    color = ruleColor.copy(alpha = 0.55f),
                     start = Offset(innerLeft + 10f * scale, headerTop + 78f * scale),
                     end = Offset(innerLeft + contentWidth * 0.48f, headerTop + 78f * scale),
                     strokeWidth = thin,
                 )
                 drawLine(
-                    color = RuleColor.copy(alpha = 0.55f),
+                    color = ruleColor.copy(alpha = 0.55f),
                     start = Offset(innerLeft + contentWidth * 0.55f, headerTop + 78f * scale),
                     end = Offset(innerRight - 10f * scale, headerTop + 78f * scale),
                     strokeWidth = thin,
                 )
 
                 drawRoundRect(
-                    color = GridColor.copy(alpha = 0.65f),
+                    color = gridColor.copy(alpha = 0.65f),
                     topLeft = Offset(innerLeft, mainTop),
                     size = Size(scheduleRight - innerLeft, scheduleBottom - mainTop),
                     cornerRadius = CornerRadius(10f * scale, 10f * scale),
@@ -343,7 +400,7 @@ fun DrawScope.drawPageBackground(
                 var hour = 8
                 while (slotY < scheduleBottom - 8f * scale) {
                     drawLine(
-                        color = RuleColor.copy(alpha = 0.55f),
+                        color = ruleColor.copy(alpha = 0.55f),
                         start = Offset(innerLeft, slotY),
                         end = Offset(scheduleRight, slotY),
                         strokeWidth = thin,
@@ -355,7 +412,7 @@ fun DrawScope.drawPageBackground(
                             y = slotY + 16f * scale,
                             scale = scale,
                             size = 10f,
-                            color = DotColor.copy(alpha = 0.9f),
+                            color = dotColor.copy(alpha = 0.9f),
                         )
                     }
                     slotY += slotHeight
@@ -363,7 +420,7 @@ fun DrawScope.drawPageBackground(
                 }
 
                 drawRoundRect(
-                    color = GridColor.copy(alpha = 0.65f),
+                    color = gridColor.copy(alpha = 0.65f),
                     topLeft = Offset(notesLeft, mainTop),
                     size = Size(innerRight - notesLeft, scheduleBottom - mainTop),
                     cornerRadius = CornerRadius(10f * scale, 10f * scale),
@@ -379,7 +436,7 @@ fun DrawScope.drawPageBackground(
                 var noteY = mainTop + 46f * scale
                 while (noteY < scheduleBottom - 10f * scale) {
                     drawLine(
-                        color = RuleColor.copy(alpha = 0.50f),
+                        color = ruleColor.copy(alpha = 0.50f),
                         start = Offset(notesLeft + 10f * scale, noteY),
                         end = Offset(innerRight - 10f * scale, noteY),
                         strokeWidth = thin,
@@ -388,7 +445,7 @@ fun DrawScope.drawPageBackground(
                 }
 
                 drawRoundRect(
-                    color = GridColor.copy(alpha = 0.65f),
+                    color = gridColor.copy(alpha = 0.65f),
                     topLeft = Offset(innerLeft, tasksTop),
                     size = Size(contentWidth, tasksBottom - tasksTop),
                     cornerRadius = CornerRadius(10f * scale, 10f * scale),
@@ -405,14 +462,14 @@ fun DrawScope.drawPageBackground(
                 while (taskY < tasksBottom - 8f * scale) {
                     val box = 16f * scale
                     drawRoundRect(
-                        color = GridColor.copy(alpha = 0.85f),
+                        color = gridColor.copy(alpha = 0.85f),
                         topLeft = Offset(innerLeft + 12f * scale, taskY - box + 2f * scale),
                         size = Size(box, box),
                         cornerRadius = CornerRadius(3f * scale, 3f * scale),
                         style = DrawStroke(width = thin),
                     )
                     drawLine(
-                        color = RuleColor.copy(alpha = 0.50f),
+                        color = ruleColor.copy(alpha = 0.50f),
                         start = Offset(innerLeft + 38f * scale, taskY),
                         end = Offset(innerRight - 12f * scale, taskY),
                         strokeWidth = thin,
@@ -443,7 +500,7 @@ fun DrawScope.drawPageBackground(
                     size = 20f,
                 )
                 drawRect(
-                    color = GridColor.copy(alpha = 0.70f),
+                    color = gridColor.copy(alpha = 0.70f),
                     topLeft = Offset(innerLeft, tableTop),
                     size = Size(innerRight - innerLeft, headerBottom - tableTop),
                     style = DrawStroke(width = lineWidth),
@@ -452,7 +509,7 @@ fun DrawScope.drawPageBackground(
                     val x = innerLeft + columnWidth * index
                     if (index > 0) {
                         drawLine(
-                            color = GridColor.copy(alpha = 0.70f),
+                            color = gridColor.copy(alpha = 0.70f),
                             start = Offset(x, tableTop),
                             end = Offset(x, tableBottom),
                             strokeWidth = lineWidth,
@@ -468,7 +525,7 @@ fun DrawScope.drawPageBackground(
                     var y = headerBottom + 40f * scale
                     while (y < tableBottom - 6f * scale) {
                         drawLine(
-                            color = RuleColor.copy(alpha = 0.48f),
+                            color = ruleColor.copy(alpha = 0.48f),
                             start = Offset(x + 8f * scale, y),
                             end = Offset(x + columnWidth - 8f * scale, y),
                             strokeWidth = thin,
@@ -477,7 +534,7 @@ fun DrawScope.drawPageBackground(
                     }
                 }
                 drawRect(
-                    color = GridColor.copy(alpha = 0.70f),
+                    color = gridColor.copy(alpha = 0.70f),
                     topLeft = Offset(innerLeft, tableTop),
                     size = Size(innerRight - innerLeft, tableBottom - tableTop),
                     style = DrawStroke(width = lineWidth),
@@ -506,7 +563,7 @@ fun DrawScope.drawPageBackground(
                     for (line in 0..4) {
                         val y = systemTop + staffGap * line
                         drawLine(
-                            color = RuleColor.copy(alpha = 0.75f),
+                            color = ruleColor.copy(alpha = 0.75f),
                             start = Offset(innerLeft, y),
                             end = Offset(innerRight, y),
                             strokeWidth = lineWidth,
@@ -514,7 +571,7 @@ fun DrawScope.drawPageBackground(
                     }
                     listOf(innerLeft, innerRight).forEach { x ->
                         drawLine(
-                            color = GridColor.copy(alpha = 0.80f),
+                            color = gridColor.copy(alpha = 0.80f),
                             start = Offset(x, systemTop),
                             end = Offset(x, systemTop + staffGap * 4f),
                             strokeWidth = lineWidth * 1.2f,
@@ -552,14 +609,14 @@ fun DrawScope.drawPageBackground(
                         val x = innerLeft + column * (cellWidth + gap)
                         val y = contentTop + row * (cellHeight + gap)
                         drawRoundRect(
-                            color = GridColor.copy(alpha = 0.72f),
+                            color = gridColor.copy(alpha = 0.72f),
                             topLeft = Offset(x, y),
                             size = Size(cellWidth, cellHeight),
                             cornerRadius = CornerRadius(8f * scale, 8f * scale),
                             style = DrawStroke(width = lineWidth),
                         )
                         drawLine(
-                            color = RuleColor.copy(alpha = 0.55f),
+                            color = ruleColor.copy(alpha = 0.55f),
                             start = Offset(x + 10f * scale, y + cellHeight - 24f * scale),
                             end = Offset(x + cellWidth - 10f * scale, y + cellHeight - 24f * scale),
                             strokeWidth = thin,
@@ -593,14 +650,14 @@ fun DrawScope.drawPageBackground(
                     while (y + 28f * scale < contentBottom) {
                         val box = 16f * scale
                         drawRoundRect(
-                            color = GridColor.copy(alpha = 0.85f),
+                            color = gridColor.copy(alpha = 0.85f),
                             topLeft = Offset(x, y),
                             size = Size(box, box),
                             cornerRadius = CornerRadius(3f * scale, 3f * scale),
                             style = DrawStroke(width = thin),
                         )
                         drawLine(
-                            color = RuleColor.copy(alpha = 0.58f),
+                            color = ruleColor.copy(alpha = 0.58f),
                             start = Offset(x + box + 10f * scale, y + box / 2f),
                             end = Offset(x + columnWidth, y + box / 2f),
                             strokeWidth = thin,
@@ -609,7 +666,7 @@ fun DrawScope.drawPageBackground(
                     }
                 }
                 drawLine(
-                    color = GridColor.copy(alpha = 0.65f),
+                    color = gridColor.copy(alpha = 0.65f),
                     start = Offset(innerLeft + columnWidth + gap / 2f, contentTop),
                     end = Offset(innerLeft + columnWidth + gap / 2f, contentBottom),
                     strokeWidth = thin,
@@ -625,7 +682,7 @@ private fun DrawScope.drawTemplateLabel(
     y: Float,
     scale: Float,
     size: Float = 14f,
-    color: Color = DotColor.copy(alpha = 0.9f),
+    color: Color = TemplateLabelColor.copy(alpha = 0.9f),
 ) {
     if (scale <= 0f) return
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -643,8 +700,9 @@ fun DrawScope.drawStrokeBody(
     overrideColor: Color? = null,
     alpha: Float = 1f,
     extraWidth: Float = 0f,
+    darkPaper: Boolean = false,
 ) {
-    val color = overrideColor ?: Color(stroke.color.toInt())
+    val color = overrideColor ?: paperInkColor(stroke.color, darkPaper)
     val width = (stroke.width + extraWidth) * scale
     if (width <= 0f) return
     val screenPoints = stroke.points.map {
@@ -668,17 +726,18 @@ fun DrawScope.drawStrokeBody(
             }
             val path = smoothPath(screenPoints)
             val highlight = color.copy(alpha = 0.30f * alpha)
+            val blendMode = if (darkPaper) BlendMode.Screen else BlendMode.Multiply
             drawPath(
                 path = path,
                 color = highlight,
                 style = DrawStroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                blendMode = BlendMode.Multiply,
+                blendMode = blendMode,
             )
             drawPath(
                 path = path,
                 color = highlight.copy(alpha = 0.10f * alpha),
                 style = DrawStroke(width = width * 0.7f, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                blendMode = BlendMode.Multiply,
+                blendMode = blendMode,
             )
         }
 
@@ -894,14 +953,15 @@ private fun smoothPath(points: List<Offset>): Path {
     return path
 }
 
-private fun textLayoutFor(item: TextItem): StaticLayout {
+private fun textLayoutFor(item: TextItem, darkPaper: Boolean): StaticLayout {
+    val key = if (darkPaper) "${item.id}:dark" else item.id
     synchronized(textLayoutCache) {
-        val cached = textLayoutCache[item.id]
+        val cached = textLayoutCache[key]
         if (cached != null && cached.spec == item) return cached.layout
     }
-    val layout = buildTextLayout(item)
+    val layout = buildTextLayout(item, colorOverride = paperInkColor(item.color, darkPaper))
     synchronized(textLayoutCache) {
-        textLayoutCache[item.id] = CachedTextLayout(item, layout)
+        textLayoutCache[key] = CachedTextLayout(item, layout)
     }
     return layout
 }
@@ -918,13 +978,18 @@ private fun stickyLayoutFor(note: StickyNote): StaticLayout {
     return layout
 }
 
-fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
+fun DrawScope.drawTextItem(
+    item: TextItem,
+    scale: Float,
+    origin: Offset,
+    darkPaper: Boolean = false,
+) {
     if (item.text.isBlank() || scale <= 0f) return
     val highlightColor = item.formatting.highlightColor
     if (highlightColor != null) {
         val bounds = item.approximateBounds()
         drawRoundRect(
-            color = Color(highlightColor.toInt()).copy(alpha = 0.38f),
+            color = paperInkColor(highlightColor, darkPaper).copy(alpha = 0.38f),
             topLeft = Offset(
                 origin.x + bounds.left * scale,
                 origin.y + bounds.top * scale,
@@ -936,7 +1001,7 @@ fun DrawScope.drawTextItem(item: TextItem, scale: Float, origin: Offset) {
             ),
         )
     }
-    val layout = textLayoutFor(item)
+    val layout = textLayoutFor(item, darkPaper)
     val canvas = drawContext.canvas.nativeCanvas
     canvas.withSave {
         translate(origin.x + item.x * scale, origin.y + item.y * scale)
@@ -997,14 +1062,19 @@ fun DrawScope.drawStickyNote(note: StickyNote, scale: Float, origin: Offset) {
 }
 
 /** Dashed frame shown around sticky notes while the sticky tool is active. */
-fun DrawScope.drawStickyFrame(note: StickyNote, scale: Float, origin: Offset) {
+fun DrawScope.drawStickyFrame(
+    note: StickyNote,
+    scale: Float,
+    origin: Offset,
+    darkPaper: Boolean = false,
+) {
     if (scale <= 0f) return
     val left = origin.x + note.x * scale
     val top = origin.y + note.y * scale
     val width = note.width * scale
     val height = note.effectiveHeight() * scale
     drawRoundRect(
-        color = SelectionColor.copy(alpha = 0.55f),
+        color = selectionColorFor(darkPaper).copy(alpha = 0.55f),
         topLeft = Offset(left, top),
         size = Size(width, height),
         cornerRadius = CornerRadius((10f * scale).coerceAtLeast(2f), (10f * scale).coerceAtLeast(2f)),
@@ -1016,46 +1086,86 @@ fun DrawScope.drawStickyFrame(note: StickyNote, scale: Float, origin: Offset) {
 }
 
 /** Dashed box and bottom-right resize handle shown while the text tool is active. */
-fun DrawScope.drawTextFrame(item: TextItem, scale: Float, origin: Offset) {
+fun DrawScope.drawTextFrame(
+    item: TextItem,
+    scale: Float,
+    origin: Offset,
+    darkPaper: Boolean = false,
+) {
     if (scale <= 0f) return
+    val selectionColor = selectionColorFor(darkPaper)
     val bounds = item.approximateBounds()
     val left = origin.x + bounds.left * scale
     val top = origin.y + bounds.top * scale
     val right = origin.x + bounds.right * scale
     val bottom = origin.y + bounds.bottom * scale
-    val effect = PathEffect.dashPathEffect(floatArrayOf(7f, 6f), 0f)
+    val effect = PathEffect.dashPathEffect(
+        floatArrayOf(6.dp.toPx(), 5.dp.toPx()),
+        0f,
+    )
     drawRect(
-        color = SelectionColor.copy(alpha = 0.65f),
+        color = selectionColor.copy(alpha = 0.65f),
         topLeft = Offset(left, top),
         size = Size(right - left, bottom - top),
-        style = DrawStroke(width = 1.4f, pathEffect = effect),
+        style = DrawStroke(width = 1.2.dp.toPx(), pathEffect = effect),
     )
+    val handleRadius = 7.dp.toPx()
     val handle = Offset(right, bottom)
-    drawCircle(color = Color.White, radius = 8f, center = handle)
+    drawCircle(color = Color.White, radius = handleRadius, center = handle)
     drawCircle(
-        color = SelectionColor,
-        radius = 8f,
+        color = selectionColor,
+        radius = handleRadius,
         center = handle,
-        style = DrawStroke(width = 2f),
+        style = DrawStroke(width = 1.5.dp.toPx()),
     )
-    drawCircle(color = SelectionColor, radius = 3f, center = handle)
+    drawCircle(color = selectionColor, radius = 3.dp.toPx(), center = handle)
 }
 
-fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {
+/**
+ * Dashed selection box with fixed-size corner handles and a rotation handle above the box.
+ * Handle geometry is expressed in dp so the hit test in `DrawingCanvas` can match it at any zoom.
+ */
+fun DrawScope.drawSelectionFrame(
+    bounds: Bounds,
+    scale: Float,
+    origin: Offset,
+    darkPaper: Boolean = false,
+) {
+    if (scale <= 0f) return
+    val selectionColor = selectionColorFor(darkPaper)
     val left = origin.x + bounds.left * scale
     val top = origin.y + bounds.top * scale
     val width = bounds.width * scale
     val height = bounds.height * scale
-    val padding = 8f * scale.coerceAtLeast(0.5f)
-    val effect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f)
+    val padding = 8.dp.toPx()
+    val handleRadius = 6.dp.toPx()
+    val rotationOffset = 28.dp.toPx()
+    val effect = PathEffect.dashPathEffect(
+        floatArrayOf(8.dp.toPx(), 6.dp.toPx()),
+        0f,
+    )
     drawRoundRect(
-        color = SelectionColor,
+        color = selectionColor,
         topLeft = Offset(left - padding, top - padding),
         size = Size(width + padding * 2, height + padding * 2),
-        cornerRadius = CornerRadius(6f, 6f),
-        style = DrawStroke(width = 2.2f, pathEffect = effect),
+        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+        style = DrawStroke(width = 1.6.dp.toPx(), pathEffect = effect),
     )
-    val handleRadius = 6f
+    val topCenter = Offset(left + width / 2f, top - padding)
+    val rotationHandle = Offset(topCenter.x, topCenter.y - rotationOffset)
+    drawLine(
+        color = selectionColor,
+        start = topCenter,
+        end = rotationHandle,
+        strokeWidth = 1.2.dp.toPx(),
+    )
+    drawCircle(color = Color.White, radius = handleRadius, center = rotationHandle)
+    drawCircle(
+        color = selectionColor,
+        radius = handleRadius,
+        center = rotationHandle,
+        style = DrawStroke(width = 1.5.dp.toPx()),
+    )
     listOf(
         Offset(left - padding, top - padding),
         Offset(left + width + padding, top - padding),
@@ -1064,10 +1174,10 @@ fun DrawScope.drawSelectionFrame(bounds: Bounds, scale: Float, origin: Offset) {
     ).forEach { point ->
         drawCircle(color = Color.White, radius = handleRadius, center = point)
         drawCircle(
-            color = SelectionColor,
+            color = selectionColor,
             radius = handleRadius,
             center = point,
-            style = DrawStroke(width = 2f),
+            style = DrawStroke(width = 1.5.dp.toPx()),
         )
     }
 }

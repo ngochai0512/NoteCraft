@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputChange
@@ -64,13 +65,16 @@ import com.notecraft.util.hitHandle
 import com.notecraft.util.hitTest
 import com.notecraft.util.selectInsidePolygon
 import com.notecraft.util.selectionBounds
+import com.notecraft.ui.theme.LocalDarkPaper
 import com.notecraft.ui.theme.PaperSurface
+import com.notecraft.ui.theme.PaperSurfaceDark
 import androidx.ink.authoring.compose.InProgressStrokes
 import androidx.ink.brush.Brush as InkApiBrush
 import androidx.ink.strokes.Stroke as InkApiStroke
 import android.util.Log
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -98,7 +102,7 @@ private class VisiblePageState(value: Int) {
     var value: Int = value
 }
 
-private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, TEXT_RESIZE, STICKY, STICKY_MOVE, LASSO, MOVE, LASER }
+private enum class GestureMode { NONE, DRAW, SHAPE, ERASE, TEXT, TEXT_RESIZE, STICKY, STICKY_MOVE, LASSO, MOVE, SELECTION_RESIZE, SELECTION_ROTATE, LASER }
 
 /** Freehand tools rendered through Jetpack Ink while authoring. */
 private val InkToolTypes = setOf(
@@ -131,6 +135,10 @@ fun DrawingCanvas(
     onSelectionMoveStart: () -> Unit,
     onSelectionMove: (Offset) -> Unit,
     onSelectionMoveEnd: () -> Unit,
+    onSelectionTransformStart: () -> Unit,
+    onSelectionResize: (Float, Float, Float, Float) -> Unit,
+    onSelectionRotate: (Float) -> Unit,
+    onSelectionTransformEnd: () -> Unit,
     onAddText: (Offset, Int) -> Unit,
     onEditText: (TextItem) -> Unit,
     onTextResizeStart: () -> Unit,
@@ -147,6 +155,7 @@ fun DrawingCanvas(
 ) {
     val configuration = LocalConfiguration.current
     val compactHeight = configuration.screenHeightDp < 480
+    val darkPaper = LocalDarkPaper.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val viewport = remember(noteId) { CanvasViewport() }
     val scope = rememberCoroutineScope()
@@ -175,6 +184,10 @@ fun DrawingCanvas(
     val selectionMoveStart by rememberUpdatedState(onSelectionMoveStart)
     val selectionMove by rememberUpdatedState(onSelectionMove)
     val selectionMoveEnd by rememberUpdatedState(onSelectionMoveEnd)
+    val selectionTransformStart by rememberUpdatedState(onSelectionTransformStart)
+    val selectionResize by rememberUpdatedState(onSelectionResize)
+    val selectionRotate by rememberUpdatedState(onSelectionRotate)
+    val selectionTransformEnd by rememberUpdatedState(onSelectionTransformEnd)
     val addText by rememberUpdatedState(onAddText)
     val editText by rememberUpdatedState(onEditText)
     val textResizeStart by rememberUpdatedState(onTextResizeStart)
@@ -368,8 +381,11 @@ fun DrawingCanvas(
     // paths use the custom renderer instead of Ink's wet overlay.
     val useInk = tool in InkToolTypes && !rulerEnabled && !stylusOnly
     val inkBrush = if (useInk) {
-        remember(tool, color, width, inkScale) {
-            runCatching { createInkBrush(tool, color, width, inkScale) }
+        remember(tool, color, width, inkScale, darkPaper) {
+            val inkColor = paperInkColor(color, darkPaper)
+                .toArgb()
+                .toLong() and 0xFFFFFFFFL
+            runCatching { createInkBrush(tool, inkColor, width, inkScale) }
                 .onFailure { Log.e("NoteCraftInk", "Unable to initialize Ink brush", it) }
                 .getOrNull()
         }
@@ -402,7 +418,7 @@ fun DrawingCanvas(
         modifier = modifier
             .fillMaxSize()
             .clipToBounds()
-            .background(PaperSurface)
+            .background(if (darkPaper) PaperSurfaceDark else PaperSurface)
             .onSizeChanged { canvasSize = it }
             .then(inkTransformModifier),
     ) {
@@ -475,6 +491,11 @@ fun DrawingCanvas(
                         var stickyMoveActive = false
                         var movingStickyId: String? = null
                         var stickyMoved = false
+                        var selectionTransformActive = false
+                        var selectionResizeAnchor = Offset.Zero
+                        var selectionResizeHandle = Offset.Zero
+                        var selectionRotateCenter = Offset.Zero
+                        var selectionRotateStart = 0f
                         var zoomedDuringGesture = false
                         val velocityTracker = VelocityTracker()
                         var rulerSnap = false
@@ -598,10 +619,66 @@ fun DrawingCanvas(
                                     } else {
                                         null
                                     }
-                                    if (selectionBounds != null && selectionBounds.expand(14f).contains(downPage.x, downPage.y)) {
-                                        mode = GestureMode.MOVE
-                                        selectionMoveActive = true
-                                        selectionMoveStart()
+                                    if (selectionBounds != null) {
+                                        val scale = transform.scale.coerceAtLeast(0.001f)
+                                        val selectionTolerance = 22.dp.toPx() / scale
+                                        val pad = 8.dp.toPx() / scale
+                                        val rotateOffset = 28.dp.toPx() / scale
+                                        val rotationHandle = Offset(
+                                            selectionBounds.centerX,
+                                            selectionBounds.top - pad - rotateOffset,
+                                        )
+                                        val corners = listOf(
+                                            Offset(selectionBounds.left - pad, selectionBounds.top - pad) to
+                                                Offset(selectionBounds.right + pad, selectionBounds.bottom + pad),
+                                            Offset(selectionBounds.right + pad, selectionBounds.top - pad) to
+                                                Offset(selectionBounds.left - pad, selectionBounds.bottom + pad),
+                                            Offset(selectionBounds.left - pad, selectionBounds.bottom + pad) to
+                                                Offset(selectionBounds.right + pad, selectionBounds.top - pad),
+                                            Offset(selectionBounds.right + pad, selectionBounds.bottom + pad) to
+                                                Offset(selectionBounds.left - pad, selectionBounds.top - pad),
+                                        )
+                                        val hitCorner = corners.firstOrNull { (corner, _) ->
+                                            hypot(corner.x - downPage.x, corner.y - downPage.y) <= selectionTolerance
+                                        }
+                                        when {
+                                            hypot(
+                                                rotationHandle.x - downPage.x,
+                                                rotationHandle.y - downPage.y,
+                                            ) <= selectionTolerance -> {
+                                                mode = GestureMode.SELECTION_ROTATE
+                                                selectionRotateCenter = Offset(
+                                                    selectionBounds.centerX,
+                                                    selectionBounds.centerY,
+                                                )
+                                                selectionRotateStart = atan2(
+                                                    downPage.y - selectionBounds.centerY,
+                                                    downPage.x - selectionBounds.centerX,
+                                                )
+                                                selectionTransformActive = true
+                                                selectionTransformStart()
+                                            }
+
+                                            hitCorner != null -> {
+                                                mode = GestureMode.SELECTION_RESIZE
+                                                selectionResizeHandle = hitCorner.first
+                                                selectionResizeAnchor = hitCorner.second
+                                                selectionTransformActive = true
+                                                selectionTransformStart()
+                                            }
+
+                                            selectionBounds.expand(pad).contains(downPage.x, downPage.y) -> {
+                                                mode = GestureMode.MOVE
+                                                selectionMoveActive = true
+                                                selectionMoveStart()
+                                            }
+
+                                            else -> {
+                                                mode = GestureMode.LASSO
+                                                lassoPoints.add(Pt(downPage.x, downPage.y, 0.5f))
+                                                lassoPreview = lassoPoints.toList()
+                                            }
+                                        }
                                     } else {
                                         mode = GestureMode.LASSO
                                         lassoPoints.add(Pt(downPage.x, downPage.y, 0.5f))
@@ -643,6 +720,10 @@ fun DrawingCanvas(
                                     if (stickyMoveActive) {
                                         stickyMoveEnd()
                                         stickyMoveActive = false
+                                    }
+                                    if (selectionTransformActive) {
+                                        selectionTransformEnd()
+                                        selectionTransformActive = false
                                     }
                                     mode = GestureMode.NONE
                                 }
@@ -716,6 +797,41 @@ fun DrawingCanvas(
                                                 )
                                                 moved = true
                                             }
+                                        }
+
+                                        GestureMode.SELECTION_RESIZE -> {
+                                            val dx = selectionResizeHandle.x - selectionResizeAnchor.x
+                                            val dy = selectionResizeHandle.y - selectionResizeAnchor.y
+                                            val scaleX = if (abs(dx) > 0.001f) {
+                                                (pagePoint.x - selectionResizeAnchor.x) / dx
+                                            } else {
+                                                1f
+                                            }
+                                            val scaleY = if (abs(dy) > 0.001f) {
+                                                (pagePoint.y - selectionResizeAnchor.y) / dy
+                                            } else {
+                                                1f
+                                            }
+                                            selectionResize(
+                                                scaleX,
+                                                scaleY,
+                                                selectionResizeAnchor.x,
+                                                selectionResizeAnchor.y,
+                                            )
+                                            moved = true
+                                        }
+
+                                        GestureMode.SELECTION_ROTATE -> {
+                                            val angle = atan2(
+                                                pagePoint.y - selectionRotateCenter.y,
+                                                pagePoint.x - selectionRotateCenter.x,
+                                            )
+                                            var delta = angle - selectionRotateStart
+                                            val twoPi = (2 * PI).toFloat()
+                                            while (delta > PI) delta -= twoPi
+                                            while (delta < -PI) delta += twoPi
+                                            selectionRotate(delta)
+                                            moved = true
                                         }
 
                                         GestureMode.TEXT_RESIZE -> {
@@ -797,6 +913,9 @@ fun DrawingCanvas(
 
                                 GestureMode.ERASE -> if (eraseActive) eraseEnd()
                                 GestureMode.MOVE -> if (selectionMoveActive) selectionMoveEnd()
+                                GestureMode.SELECTION_RESIZE,
+                                GestureMode.SELECTION_ROTATE,
+                                -> if (selectionTransformActive) selectionTransformEnd()
                                 GestureMode.TEXT_RESIZE -> if (textResizeActive) textResizeEnd()
                                 GestureMode.STICKY_MOVE -> {
                                     if (stickyMoveActive) {
@@ -840,7 +959,7 @@ fun DrawingCanvas(
                     }
                 },
         ) {
-            drawPaperSurface()
+            drawPaperSurface(darkPaper)
 
             val transform = currentTransform()
             if (transform.scale > 0f) {
@@ -858,6 +977,7 @@ fun DrawingCanvas(
                         top = pageOrigin.y,
                         right = pageOrigin.x + PAGE_WIDTH * transform.scale,
                         bottom = pageOrigin.y + pageHeightPx,
+                        darkPaper = darkPaper,
                     )
                     drawPageContent(
                         page = item,
@@ -865,10 +985,11 @@ fun DrawingCanvas(
                         origin = pageOrigin,
                         selectedStrokeIds = selectedStrokeIds,
                         selectedTextIds = selectedTextIds,
-                        drawSelection = true,
+                        drawSelection = tool == ToolType.LASSO,
                         drawPaper = false,
                         drawBackground = false,
                         clip = true,
+                        darkPaper = darkPaper,
                     )
                     if (index < currentPages.lastIndex) {
                         val dividerY = pageOrigin.y + pageHeightPx + (PageGap * transform.scale) / 2f
@@ -887,7 +1008,9 @@ fun DrawingCanvas(
                         if (pageOrigin.y > size.height || pageOrigin.y + pageHeightPx < 0f) {
                             return@forEachIndexed
                         }
-                        item.texts.forEach { text -> drawTextFrame(text, transform.scale, pageOrigin) }
+                        item.texts.forEach { text ->
+                            drawTextFrame(text, transform.scale, pageOrigin, darkPaper = darkPaper)
+                        }
                     }
                 }
 
@@ -897,7 +1020,9 @@ fun DrawingCanvas(
                         if (pageOrigin.y > size.height || pageOrigin.y + pageHeightPx < 0f) {
                             return@forEachIndexed
                         }
-                        item.stickies.forEach { note -> drawStickyFrame(note, transform.scale, pageOrigin) }
+                        item.stickies.forEach { note ->
+                            drawStickyFrame(note, transform.scale, pageOrigin, darkPaper = darkPaper)
+                        }
                     }
                 }
 
@@ -906,11 +1031,16 @@ fun DrawingCanvas(
                     origin = pageOriginFor(gesturePage),
                 )
                 previewStroke?.let { stroke ->
-                    drawStrokeBody(stroke, gestureTransform.scale, gestureTransform.origin)
+                    drawStrokeBody(
+                        stroke = stroke,
+                        scale = gestureTransform.scale,
+                        origin = gestureTransform.origin,
+                        darkPaper = darkPaper,
+                    )
                 }
 
                 drawLaserTrail(laserPoints, gestureTransform)
-                drawLassoPreview(lassoPreview, gestureTransform)
+                drawLassoPreview(lassoPreview, gestureTransform, darkPaper)
 
                 if (rulerEnabled) {
                     drawRulerGuide(
@@ -998,7 +1128,7 @@ fun DrawingCanvas(
                     text = when (tool) {
                         ToolType.TEXT -> "Tap the page to add a text box · drag its corner to resize"
                         ToolType.STICKY -> "Tap to add a sticky note · drag a note to move it"
-                        else -> "Circle items to select · drag to move"
+                        else -> "Circle items to select · drag to move · handles resize and rotate"
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = hintText,

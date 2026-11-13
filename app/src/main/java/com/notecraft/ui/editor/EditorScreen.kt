@@ -486,6 +486,9 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     },
                     onDeleteSelection = viewModel::deleteSelection,
                     onDuplicateSelection = viewModel::duplicateSelection,
+                    onCopySelection = viewModel::copySelection,
+                    onCutSelection = viewModel::cutSelection,
+                    onPasteSelection = viewModel::pasteSelection,
                     onClearSelection = viewModel::clearSelection,
                     onClearPage = viewModel::clearPage,
                     onMoreMenuVisibilityChanged = { showToolMenu = it },
@@ -539,6 +542,12 @@ fun EditorScreen(viewModel: NoteCraftViewModel) {
                     onSelectionMoveStart = viewModel::beginSelectionMove,
                     onSelectionMove = { delta -> viewModel.moveSelection(delta.x, delta.y) },
                     onSelectionMoveEnd = viewModel::endSelectionMove,
+                    onSelectionTransformStart = viewModel::beginSelectionTransform,
+                    onSelectionResize = { scaleX, scaleY, anchorX, anchorY ->
+                        viewModel.resizeSelection(scaleX, scaleY, anchorX, anchorY)
+                    },
+                    onSelectionRotate = viewModel::rotateSelection,
+                    onSelectionTransformEnd = viewModel::endSelectionTransform,
                     onAddText = { point, targetPage ->
                         textDialogTarget = TextDialogTarget.New(point, targetPage)
                     },

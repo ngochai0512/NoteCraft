@@ -9,9 +9,11 @@ import com.notecraft.model.TextItem
 import com.notecraft.model.ToolType
 import com.notecraft.model.newId
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 
 data class Bounds(
     val left: Float,
@@ -312,6 +314,24 @@ fun StickyNote.bounds(): Bounds = Bounds(x, y, x + width, y + effectiveHeight())
 
 fun StickyNote.hitTest(x: Float, y: Float, extraRadius: Float = 0f): Boolean =
     bounds().expand(extraRadius).contains(x, y)
+
+/** Rotates a page-space point around a center by [angleRadians] (clockwise in screen space). */
+fun rotateAroundCenter(
+    x: Float,
+    y: Float,
+    centerX: Float,
+    centerY: Float,
+    angleRadians: Float,
+): Pt {
+    val dx = x - centerX
+    val dy = y - centerY
+    val cosAngle = cos(angleRadians)
+    val sinAngle = sin(angleRadians)
+    return Pt(
+        x = centerX + dx * cosAngle - dy * sinAngle,
+        y = centerY + dx * sinAngle + dy * cosAngle,
+    )
+}
 
 fun selectionBounds(
     page: Page,

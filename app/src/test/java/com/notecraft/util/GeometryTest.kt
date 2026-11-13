@@ -200,4 +200,32 @@ class GeometryTest {
         assertTrue(note.hitTest(150f, 250f))
         assertTrue(!note.hitTest(500f, 500f))
     }
+
+    @Test
+    fun rotatingASelectionTurnsPointsAroundTheCenter() {
+        val rotated = rotateAroundCenter(
+            x = 110f,
+            y = 100f,
+            centerX = 100f,
+            centerY = 100f,
+            angleRadians = (Math.PI / 2).toFloat(),
+        )
+
+        assertEquals(100f, rotated.x, 0.001f)
+        assertEquals(110f, rotated.y, 0.001f)
+    }
+
+    @Test
+    fun rotatingByAFullTurnKeepsThePointInPlace() {
+        val point = rotateAroundCenter(
+            x = 42f,
+            y = -17f,
+            centerX = 5f,
+            centerY = 9f,
+            angleRadians = (2 * Math.PI).toFloat(),
+        )
+
+        assertEquals(42f, point.x, 0.001f)
+        assertEquals(-17f, point.y, 0.001f)
+    }
 }

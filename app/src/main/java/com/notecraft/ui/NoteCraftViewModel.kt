@@ -17,6 +17,7 @@ import com.notecraft.model.DefaultToolWidths
 import com.notecraft.model.EraserMode
 import com.notecraft.model.InkBlack
 import com.notecraft.model.Note
+import com.notecraft.model.NoteTemplate
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.model.PageBackground
@@ -32,12 +33,16 @@ import com.notecraft.model.blankPage
 import com.notecraft.model.duplicate
 import com.notecraft.model.newId
 import com.notecraft.model.newNote
+import com.notecraft.util.Bounds
+import com.notecraft.util.TextMeasurer
+import com.notecraft.util.approximateBounds
 import com.notecraft.util.hitTest
 import com.notecraft.util.normalizeFolder
-import com.notecraft.util.TextMeasurer
 import com.notecraft.util.normalizeTags
 import com.notecraft.util.pageIndexAfterMove
 import com.notecraft.util.partialErase
+import com.notecraft.util.rotateAroundCenter
+import com.notecraft.util.selectionBounds
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -65,6 +70,7 @@ data class EditorState(
     val selectedStrokeIds: Set<String> = emptySet(),
     val selectedTextIds: Set<String> = emptySet(),
     val selectionPageIndex: Int = 0,
+    val clipboardCount: Int = 0,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
 ) {
@@ -74,6 +80,21 @@ data class EditorState(
     val hasSelection: Boolean get() = selectedStrokeIds.isNotEmpty() || selectedTextIds.isNotEmpty()
     val selectionCount: Int get() = selectedStrokeIds.size + selectedTextIds.size
 }
+
+private data class ClipboardSelection(
+    val strokes: List<Stroke>,
+    val texts: List<TextItem>,
+) {
+    val itemCount: Int get() = strokes.size + texts.size
+}
+
+private data class SelectionTransformOrigin(
+    val pageIndex: Int,
+    val page: Page,
+    val strokeIds: Set<String>,
+    val textIds: Set<String>,
+    val bounds: Bounds,
+)
 
 class NoteCraftViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -97,6 +118,10 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     private val savedRecentColors: MutableList<Long> = loadRecentColors()
     private var textResizeBaseline: List<Page>? = null
     private var stickyMoveBaseline: List<Page>? = null
+    private var selectionTransformBaseline: List<Page>? = null
+    private var selectionTransformOrigin: SelectionTransformOrigin? = null
+    private var selectionClipboard: ClipboardSelection? = null
+    private var clipboardPasteIndex = 0
 
     var settings by mutableStateOf(loadSettings())
         private set
@@ -157,8 +182,18 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ---------------------------------------------------------------- library
 
-    fun createNote() {
-        val note = newNote(background = settings.defaultPageBackground ?: PageBackground.BLANK)
+    fun createNote(template: NoteTemplate = settings.defaultNoteTemplate) {
+        // "Untitled notebook" keeps honoring the default paper for new pages so existing
+        // preferences continue to work; explicit templates pick their own paper.
+        val background = if (template == NoteTemplate.BLANK) {
+            settings.defaultPageBackground ?: PageBackground.BLANK
+        } else {
+            template.background
+        }
+        val note = newNote(
+            title = template.label,
+            background = background,
+        )
         library = library.copy(notes = (listOf(note) + library.notes).sortedByDescending { it.updatedAt })
         persist(note)
         openNote(note.id)
@@ -173,6 +208,8 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         selectionMoveBaseline = null
         textResizeBaseline = null
         stickyMoveBaseline = null
+        selectionTransformBaseline = null
+        selectionTransformOrigin = null
         editor = EditorState(
             note = note,
             tool = settings.defaultTool,
@@ -181,6 +218,7 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
             eraserMode = savedEraserMode,
             stickyFontSize = savedStickyFontSize,
             recentColors = savedRecentColors.toList(),
+            clipboardCount = selectionClipboard?.itemCount ?: 0,
             canUndo = false,
             canRedo = false,
         )
@@ -197,6 +235,8 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         selectionMoveBaseline = null
         textResizeBaseline = null
         stickyMoveBaseline = null
+        selectionTransformBaseline = null
+        selectionTransformOrigin = null
     }
 
     fun deleteNote(noteId: String) {
@@ -275,6 +315,11 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         if (tool !in DefaultToolChoices) return
         settings = settings.copy(defaultTool = tool)
         settingsPreferences.edit().putString("default_tool", tool.name).apply()
+    }
+
+    fun setDefaultNoteTemplate(template: NoteTemplate) {
+        settings = settings.copy(defaultNoteTemplate = template)
+        settingsPreferences.edit().putString("default_note_template", template.name).apply()
     }
 
     fun setDefaultPageBackground(background: PageBackground?) {
@@ -357,10 +402,15 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
         val defaultBackground = settingsPreferences
             .getString("default_page_background", null)
             ?.let { raw -> runCatching { PageBackground.valueOf(raw) }.getOrNull() }
+        val defaultTemplate = settingsPreferences
+            .getString("default_note_template", NoteTemplate.BLANK.name)
+            ?.let { raw -> runCatching { NoteTemplate.valueOf(raw) }.getOrNull() }
+            ?: NoteTemplate.BLANK
         return AppSettings(
             themeMode = themeMode,
             defaultTool = defaultTool,
             defaultPageBackground = defaultBackground,
+            defaultNoteTemplate = defaultTemplate,
             showAutosaveIndicator = settingsPreferences.getBoolean("show_autosave_indicator", true),
             stylusOnlyMode = settingsPreferences.getBoolean("stylus_only_mode", false),
         )
@@ -898,6 +948,190 @@ class NoteCraftViewModel(application: Application) : AndroidViewModel(applicatio
     fun endSelectionMove() {
         val baseline = selectionMoveBaseline
         selectionMoveBaseline = null
+        finishContinuousEdit(baseline)
+    }
+
+
+    // ---------------------------------------------------------------- clipboard
+
+    fun copySelection() {
+        val current = editor ?: return
+        if (!current.hasSelection) return
+        val index = current.selectionPageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val page = current.note.pages[index]
+        val strokes = page.strokes.filter { it.id in current.selectedStrokeIds }
+        val texts = page.texts.filter { it.id in current.selectedTextIds }
+        if (strokes.isEmpty() && texts.isEmpty()) return
+        selectionClipboard = ClipboardSelection(
+            strokes = strokes.map { stroke ->
+                stroke.copy(points = stroke.points.map { it.copy() })
+            },
+            texts = texts.map { it.copy() },
+        )
+        clipboardPasteIndex = 0
+        editor = current.copy(clipboardCount = selectionClipboard?.itemCount ?: 0)
+    }
+
+    fun cutSelection() {
+        val current = editor ?: return
+        if (!current.hasSelection) return
+        copySelection()
+        deleteSelection()
+    }
+
+    fun pasteSelection() {
+        val clipboard = selectionClipboard ?: return
+        val current = editor ?: return
+        val index = current.pageIndex.coerceIn(0, current.note.pages.lastIndex)
+        clipboardPasteIndex = (clipboardPasteIndex + 1).coerceAtMost(5)
+        val offset = 28f * clipboardPasteIndex
+        val newStrokes = clipboard.strokes.map { stroke ->
+            stroke.copy(
+                id = newId(),
+                points = stroke.points.map { point ->
+                    point.copy(x = point.x + offset, y = point.y + offset)
+                },
+            )
+        }
+        val newTexts = clipboard.texts.map { text ->
+            val moved = text.copy(
+                id = newId(),
+                x = text.x + offset,
+                y = text.y + offset,
+            )
+            moved.copy(height = TextMeasurer.textHeight(moved))
+        }
+        commitPages { pages ->
+            pages.toMutableList().also {
+                val page = it[index]
+                it[index] = page.copy(
+                    strokes = page.strokes + newStrokes,
+                    texts = page.texts + newTexts,
+                )
+            }
+        }
+        editor = editor?.copy(
+            selectedStrokeIds = newStrokes.map { it.id }.toSet(),
+            selectedTextIds = newTexts.map { it.id }.toSet(),
+            selectionPageIndex = index,
+            tool = ToolType.LASSO,
+            clipboardCount = clipboard.itemCount,
+        )
+    }
+
+    // ---------------------------------------------------------------- selection transforms
+
+    fun beginSelectionTransform() {
+        val current = editor ?: return
+        if (!current.hasSelection) return
+        val index = current.selectionPageIndex.coerceIn(0, current.note.pages.lastIndex)
+        val page = current.note.pages[index]
+        val bounds = selectionBounds(page, current.selectedStrokeIds, current.selectedTextIds) ?: return
+        selectionTransformBaseline = current.note.pages
+        selectionTransformOrigin = SelectionTransformOrigin(
+            pageIndex = index,
+            page = page,
+            strokeIds = current.selectedStrokeIds,
+            textIds = current.selectedTextIds,
+            bounds = bounds,
+        )
+    }
+
+    fun resizeSelection(scaleX: Float, scaleY: Float, anchorX: Float, anchorY: Float) {
+        val origin = selectionTransformOrigin ?: return
+        val sx = scaleX.coerceIn(0.05f, 20f)
+        val sy = scaleY.coerceIn(0.05f, 20f)
+        val minScale = minOf(sx, sy)
+        val page = origin.page
+        val strokes = page.strokes.map { stroke ->
+            if (stroke.id in origin.strokeIds) {
+                stroke.copy(
+                    width = (stroke.width * minScale).coerceIn(0.5f, 120f),
+                    points = stroke.points.map { point ->
+                        point.copy(
+                            x = anchorX + (point.x - anchorX) * sx,
+                            y = anchorY + (point.y - anchorY) * sy,
+                        )
+                    },
+                )
+            } else {
+                stroke
+            }
+        }
+        val texts = page.texts.map { text ->
+            if (text.id in origin.textIds) {
+                val updated = text.copy(
+                    x = anchorX + (text.x - anchorX) * sx,
+                    y = anchorY + (text.y - anchorY) * sy,
+                    fontSize = (text.fontSize * minScale).coerceIn(8f, 200f),
+                    width = if (text.width > 0f) {
+                        (text.width * sx).coerceIn(40f, PAGE_WIDTH * 2f)
+                    } else {
+                        0f
+                    },
+                )
+                updated.copy(height = TextMeasurer.textHeight(updated))
+            } else {
+                text
+            }
+        }
+        replacePageWithoutHistory(
+            origin.pageIndex,
+            page.copy(strokes = strokes, texts = texts),
+        )
+    }
+
+    fun rotateSelection(angleRadians: Float) {
+        val origin = selectionTransformOrigin ?: return
+        val center = origin.bounds.center
+        val page = origin.page
+        val strokes = page.strokes.map { stroke ->
+            if (stroke.id in origin.strokeIds) {
+                stroke.copy(
+                    points = stroke.points.map { point ->
+                        val rotated = rotateAroundCenter(
+                            x = point.x,
+                            y = point.y,
+                            centerX = center.x,
+                            centerY = center.y,
+                            angleRadians = angleRadians,
+                        )
+                        point.copy(x = rotated.x, y = rotated.y)
+                    },
+                )
+            } else {
+                stroke
+            }
+        }
+        val texts = page.texts.map { text ->
+            if (text.id in origin.textIds) {
+                val bounds = text.approximateBounds()
+                val rotated = rotateAroundCenter(
+                    x = bounds.centerX,
+                    y = bounds.centerY,
+                    centerX = center.x,
+                    centerY = center.y,
+                    angleRadians = angleRadians,
+                )
+                val updated = text.copy(
+                    x = rotated.x - bounds.width / 2f,
+                    y = rotated.y - bounds.height / 2f,
+                )
+                updated.copy(height = TextMeasurer.textHeight(updated))
+            } else {
+                text
+            }
+        }
+        replacePageWithoutHistory(
+            origin.pageIndex,
+            page.copy(strokes = strokes, texts = texts),
+        )
+    }
+
+    fun endSelectionTransform() {
+        val baseline = selectionTransformBaseline
+        selectionTransformBaseline = null
+        selectionTransformOrigin = null
         finishContinuousEdit(baseline)
     }
 
