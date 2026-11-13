@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.ContentCut
+import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -609,6 +611,11 @@ private fun WidthPreview(color: Long, width: Float, maxWidth: Float) {
 @Composable
 internal fun SelectionOptions(
     count: Int,
+    hasSelection: Boolean,
+    clipboardCount: Int,
+    onCopy: () -> Unit,
+    onCut: () -> Unit,
+    onPaste: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
     onClear: () -> Unit,
@@ -616,48 +623,98 @@ internal fun SelectionOptions(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp),
+            .height(52.dp)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "$count selected",
+            text = if (hasSelection) {
+                "$count selected"
+            } else {
+                "Clipboard · $clipboardCount"
+            },
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.padding(horizontal = 8.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        TextButton(onClick = onDuplicate) {
-            Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Duplicate")
+        SelectionAction(
+            icon = Icons.Outlined.ContentCopy,
+            label = "Copy",
+            enabled = hasSelection,
+            onClick = onCopy,
+        )
+        SelectionAction(
+            icon = Icons.Outlined.ContentCut,
+            label = "Cut",
+            enabled = hasSelection,
+            onClick = onCut,
+        )
+        SelectionAction(
+            icon = Icons.Outlined.ContentPaste,
+            label = "Paste",
+            enabled = clipboardCount > 0,
+            onClick = onPaste,
+        )
+        SelectionAction(
+            icon = Icons.Outlined.ContentCopy,
+            label = "Duplicate",
+            enabled = hasSelection,
+            onClick = onDuplicate,
+        )
+        SelectionAction(
+            icon = Icons.Outlined.Delete,
+            label = "Delete",
+            enabled = hasSelection,
+            tint = MaterialTheme.colorScheme.error,
+            onClick = onDelete,
+        )
+        if (hasSelection) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        onClickLabel = "Clear selection",
+                        role = Role.Button,
+                        onClick = onClear,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Close,
+                    contentDescription = "Clear selection",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
-        TextButton(onClick = onDelete) {
-            Icon(
-                Icons.Outlined.Delete,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.width(4.dp))
-            Text("Delete", color = MaterialTheme.colorScheme.error)
-        }
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .clickable(
-                    onClickLabel = "Clear selection",
-                    role = Role.Button,
-                    onClick = onClear,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Outlined.Close,
-                contentDescription = "Clear selection",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+    }
+}
+
+@Composable
+private fun SelectionAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.height(48.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) tint else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            modifier = Modifier.size(17.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(label, color = if (enabled) tint else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
     }
 }
 

@@ -119,6 +119,9 @@ fun EditorToolPanel(
     onOpenColorPicker: () -> Unit,
     onDeleteSelection: () -> Unit,
     onDuplicateSelection: () -> Unit,
+    onCopySelection: () -> Unit,
+    onCutSelection: () -> Unit,
+    onPasteSelection: () -> Unit,
     onClearSelection: () -> Unit,
     onClearPage: () -> Unit,
     onMoreMenuVisibilityChanged: (Boolean) -> Unit,
@@ -185,13 +188,18 @@ fun EditorToolPanel(
                         )
                     },
                 )
-                if (editor.hasSelection) {
+                if (editor.hasSelection || editor.clipboardCount > 0) {
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = 6.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
                     )
                     SelectionOptions(
                         count = editor.selectionCount,
+                        hasSelection = editor.hasSelection,
+                        clipboardCount = editor.clipboardCount,
+                        onCopy = onCopySelection,
+                        onCut = onCutSelection,
+                        onPaste = onPasteSelection,
                         onDuplicate = onDuplicateSelection,
                         onDelete = onDeleteSelection,
                         onClear = onClearSelection,
