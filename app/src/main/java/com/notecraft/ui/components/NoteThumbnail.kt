@@ -23,7 +23,9 @@ import com.notecraft.model.PAGE_HEIGHT
 import com.notecraft.model.PAGE_WIDTH
 import com.notecraft.model.Page
 import com.notecraft.ui.editor.drawPageContent
+import com.notecraft.ui.theme.LocalDarkPaper
 import com.notecraft.ui.theme.PaperSurface
+import com.notecraft.ui.theme.PaperSurfaceDark
 import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,7 +37,7 @@ private const val THUMBNAIL_CACHE_SIZE = 64
 private object PageThumbnailCache {
     private val cache = LruCache<String, ImageBitmap>(THUMBNAIL_CACHE_SIZE)
 
-    fun getOrRender(key: String, page: Page): ImageBitmap {
+    fun getOrRender(key: String, page: Page, darkPaper: Boolean): ImageBitmap {
         cache.get(key)?.let { return it }
         val bitmap = createBitmap(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
         val canvas = Canvas(bitmap)
@@ -52,6 +54,7 @@ private object PageThumbnailCache {
                 origin = Offset.Zero,
                 drawPaper = true,
                 clip = true,
+                darkPaper = darkPaper,
             )
         }
         val image = bitmap.asImageBitmap()
@@ -66,14 +69,16 @@ fun NoteThumbnail(
     modifier: Modifier = Modifier,
     cacheKey: String? = null,
 ) {
+    val darkPaper = LocalDarkPaper.current
     Box(
-        modifier = modifier.background(PaperSurface),
+        modifier = modifier.background(if (darkPaper) PaperSurfaceDark else PaperSurface),
     ) {
         if (page != null) {
             val image = if (cacheKey != null) {
-                val state = produceState<ImageBitmap?>(initialValue = null, cacheKey) {
+                val key = if (darkPaper) "$cacheKey:dark" else cacheKey
+                val state = produceState<ImageBitmap?>(initialValue = null, key) {
                     value = withContext(Dispatchers.Default) {
-                        PageThumbnailCache.getOrRender(cacheKey, page)
+                        PageThumbnailCache.getOrRender(key, page, darkPaper)
                     }
                 }
                 state.value
@@ -95,6 +100,7 @@ fun NoteThumbnail(
 
 @Composable
 private fun LiveThumbnail(page: Page) {
+    val darkPaper = LocalDarkPaper.current
     Canvas(modifier = Modifier.fillMaxSize()) {
         val scale = min(size.width / PAGE_WIDTH, size.height / PAGE_HEIGHT)
         val width = PAGE_WIDTH * scale
@@ -108,6 +114,7 @@ private fun LiveThumbnail(page: Page) {
             scale = scale,
             origin = origin,
             drawPaper = true,
+            darkPaper = darkPaper,
         )
     }
 }

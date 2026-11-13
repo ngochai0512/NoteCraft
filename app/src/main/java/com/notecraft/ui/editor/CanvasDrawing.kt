@@ -155,20 +155,23 @@ internal fun InkApiStroke.toNoteCraftStroke(
 internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLassoPreview(
     points: List<Pt>,
     transform: CanvasTransform,
-) {    if (points.size < 2) return
+    darkPaper: Boolean = false,
+) {
+    if (points.size < 2) return
     val path = Path()
     points.forEachIndexed { index, point ->
         val screen = Offset(transform.origin.x + point.x * transform.scale, transform.origin.y + point.y * transform.scale)
         if (index == 0) path.moveTo(screen.x, screen.y) else path.lineTo(screen.x, screen.y)
     }
     path.close()
+    val lassoColor = if (darkPaper) Color(0xFF60A5FA) else Color(0xFF2563EB)
     drawPath(
         path = path,
-        color = Color(0xFF2563EB).copy(alpha = 0.08f),
+        color = lassoColor.copy(alpha = 0.08f),
     )
     drawPath(
         path = path,
-        color = Color(0xFF2563EB),
+        color = lassoColor,
         style = DrawStroke(
             width = 2f,
             cap = StrokeCap.Round,

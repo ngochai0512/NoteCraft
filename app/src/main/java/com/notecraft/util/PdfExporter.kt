@@ -27,7 +27,8 @@ import kotlinx.coroutines.withContext
  *
  * Pages are rasterized at 150 dpi and placed on A4 pages. Rendering through the existing
  * [drawPageContent] composable renderer keeps paper, backgrounds, strokes, and text identical to
- * what the user sees in the editor.
+ * what the user sees in the editor. Exports always use the light paper palette, even when the
+ * editor is in dark-paper mode, so shared and printed documents stay print-friendly.
  */
 object PdfExporter {
 

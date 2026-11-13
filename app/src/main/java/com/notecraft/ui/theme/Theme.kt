@@ -9,7 +9,9 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -33,6 +35,13 @@ val DeskBackdrop: Color = Color(0xFFF3F4F6)
 val PaperSurface: Color = Color(0xFFFCFCFA)
 val PaperIvory: Color = Color(0xFFFBF8F1)
 val DarkSlate: Color = Color(0xFF1E293B)
+val PaperSurfaceDark: Color = Color(0xFF151C28)
+
+/**
+ * True when the paper surface should use the dark palette. Provided once by [NoteCraftTheme] so
+ * the canvas, page renderer, and library thumbnails agree on the paper appearance.
+ */
+val LocalDarkPaper = staticCompositionLocalOf { false }
 val ChromeSurface: Color = Color(0xFFFFFFFF)
 val DividerRule: Color = Color(0xFFE5E7EB)
 
@@ -278,10 +287,12 @@ fun NoteCraftTheme(
             }
         }
     }
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = NoteCraftTypography,
-        shapes = NoteCraftShapes,
-        content = content,
-    )
+    CompositionLocalProvider(LocalDarkPaper provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = NoteCraftTypography,
+            shapes = NoteCraftShapes,
+            content = content,
+        )
+    }
 }

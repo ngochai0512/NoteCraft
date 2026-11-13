@@ -13,8 +13,11 @@ import com.notecraft.model.TextAlignment
 import com.notecraft.model.TextItem
 import kotlin.math.ceil
 
-/** Builds the same page-unit layout used by rendering and PDF export. */
-internal fun buildTextLayout(item: TextItem): StaticLayout {
+/**
+ * Builds the same page-unit layout used by rendering and PDF export. [colorOverride] lets the
+ * renderer tint text for the active paper without changing the stored [TextItem].
+ */
+internal fun buildTextLayout(item: TextItem, colorOverride: Color? = null): StaticLayout {
     val displayText = item.displayText
     val typefaceStyle = when {
         item.formatting.bold && item.formatting.italic -> Typeface.BOLD_ITALIC
@@ -23,7 +26,7 @@ internal fun buildTextLayout(item: TextItem): StaticLayout {
         else -> Typeface.NORMAL
     }
     val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = item.color.toInt()
+        color = (colorOverride ?: Color(item.color.toInt())).toArgb()
         textSize = item.fontSize
         typeface = Typeface.create("sans-serif", typefaceStyle)
         isUnderlineText = item.formatting.underline
