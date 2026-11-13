@@ -26,7 +26,7 @@ UI: Jetpack Compose + Material 3
 - **Pencil** — textured graphite line
 - **Text** — resizable typed text boxes with wrapping, left/center/right alignment, bold/italic/underline, bullet/numbered lists, line spacing, highlight, and edit-in-place
 - **Sticky notes** — lightweight colored callouts with wrapped text and adjustable text size; tap to add, drag to move, tap to edit
-- **Lasso** — select strokes and text to move, duplicate or delete
+- **Lasso** — select strokes and text to move, resize, rotate, copy/cut/paste, duplicate or delete
 - **Ruler** — toggle a draggable straight-edge guide; strokes started near it snap to a straight line
 
 **Jetpack Ink 1.0.0** powers low-latency authoring for the fountain pen, ball pen, brush pen, and highlighter. Finished Ink strokes are normalized into NoteCraft's page model so persistence, undo/redo, erasing, and lasso selection continue to work with the rest of the app. Pencil, shapes, tape, laser, text, and lasso remain custom. Ruler and stylus-only modes use the custom renderer so snapped points and pointer types stay under app control.
@@ -39,6 +39,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Ruled, squared graph, dotted and blank paper drawn continuously across the viewport; Cornell, planner, weekly, music, storyboard and checklist templates stay page-bounded
 - Draw anywhere on the visible paper, including outside the logical page bounds
 - Pinch to zoom up to 8× with unbounded two-finger pan
+- Dark paper follows the app theme; dark ink and text are automatically lifted for contrast, while the stored colors stay untouched
 - Floating zoom controls with fit-page, page-thumbnail, page-background, and ruler buttons
 - Straight-edge ruler guide: drag its handle to move it and slide sideways to rotate, then draw along it for perfectly straight lines
 - Undo and redo for every canvas, text, selection, and page operation
@@ -46,6 +47,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 ### Notes and pages
 
 - Create, rename, duplicate, and delete notes
+- **New notebook** starts from the default template; **New from template** opens a preview chooser for blank, ruled, grid, dotted, Cornell, planner, weekly, music, storyboard and checklist notebooks
 - Pin notebooks to keep them at the top of the library, regardless of the selected sort
 - Organize notebooks with flat folders and comma-separated tags, then filter the library by folder or tag
 - Add, duplicate, delete, and reorder pages by long-pressing a page thumbnail and dragging it
@@ -71,7 +73,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Per-tool color, size, and eraser-mode settings
 - Dedicated Settings screen (not a dialog) with a back action
 - Theme override: system, light, or dark
-- Default drawing tool and default paper for new pages
+- Default drawing tool, default notebook template, and default paper for new pages
 - Toggle for the editor’s autosave indicator
 - Stylus-only mode that ignores finger drawing and palm touches while keeping two-finger pan and zoom
 - Tool and app preferences persist across app launches
@@ -83,7 +85,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 - Responsive phone and tablet layouts in portrait and landscape
 - Compact icon-only ribbon in landscape; horizontal zoom dock in short landscape
 - Adaptive notebook grid, page drawer columns, and scrollable dialogs
-- Material 3 light and dark themes
+- Material 3 light and dark themes, including a dark edge-to-edge paper surface
 - Adaptive launcher icon with a dedicated round icon
 - Display cutout-aware chrome: toolbars, overlays, sheets, and grids stay inside safe insets while the paper remains edge-to-edge
 - Edge-to-edge layout and press-scale tool feedback
@@ -173,6 +175,9 @@ Update that path if the SDK is installed elsewhere.
 | Straight line | Enable the ruler, drag its handle to position and rotate it, then draw near the edge |
 | Select | Lasso tool → draw a loop around items |
 | Move selection | Drag inside the selection bounds with the lasso tool |
+| Resize selection | Drag any of the four corner handles |
+| Rotate selection | Drag the round handle above the selection box |
+| Copy / cut / paste | Use the selection toolbar; the clipboard survives closing a notebook |
 | Duplicate / delete selection | Use the selection toolbar above the tool row |
 | Pan | Drag with two fingers |
 | Zoom | Pinch with two fingers, or use the canvas zoom buttons |
@@ -211,6 +216,7 @@ app/src/main/
 │       ├── components/
 │       │   ├── Dialogs.kt            # Rename, confirm, and text-entry dialogs
 │       │   ├── CoverToneDialog.kt    # Notebook cover-tone chooser
+│       │   ├── NoteTemplateDialog.kt # New-from-template chooser
 │       │   └── NoteThumbnail.kt      # Library page previews
 │       ├── settings/
 │       │   └── SettingsScreen.kt     # Dedicated preferences screen
@@ -259,7 +265,7 @@ Saving is debounced while editing, then flushed when the editor closes or the ap
 - **Drawing** is rendered directly on a Compose `Canvas` in the editor; PDF export rasterizes pages separately.
 - **Gestures** use `awaitEachGesture` with a custom state machine so one-finger drawing and two-finger zoom/pan work together.
 - **Tool preferences** are stored in `SharedPreferences` under `notecraft_tool_prefs`, including recently used colors and the eraser mode.
-- **App preferences** (theme, default tool, default paper, autosave indicator, stylus-only mode) are stored under `notecraft_settings`.
+- **App preferences** (theme, default tool, default notebook template, default paper, autosave indicator, stylus-only mode) are stored under `notecraft_settings`.
 - **PDF export** rasterizes each page through the same renderer at 150 dpi and writes an A4 PDF selected with the system document picker.
 - **Page sharing** rasterizes the current page to a PNG in app cache and launches the Android share sheet through `FileProvider`.
 - **Ink authoring** uses `androidx.ink:ink-authoring-compose` for fountain, ball, brush, and highlighter tools. Wet strokes are rendered by `InProgressStrokes`; finished strokes are converted to immutable NoteCraft strokes and handed to the existing page state, so the downstream canvas, persistence, history, eraser, and lasso remain the source of truth.
@@ -272,8 +278,10 @@ This is intentionally a compact version of a full note-taking app:
 - The eraser removes the touched portion of a stroke (Partial) or the whole stroke (Object) rather than individual pixels; shapes and text are removed whole.
 - Text boxes wrap at their stored width, but height is automatic; there is no vertical box constraint.
 - Sticky notes are moved and edited directly with the Sticky tool; they are not part of lasso selection.
+- Rotating a selection rotates strokes precisely; typed text boxes orbit the selection center but stay upright, and sticky notes are excluded.
+- Dark paper affects the editor and library thumbnails. PDF export and PNG sharing always render light paper so shared documents stay print-friendly.
 - PNG sharing works on the current page; PDF export supports the current page, a page range, or the whole notebook.
-- Undo history lasts for the current app session only.
+- Undo history and the selection clipboard last for the current app session only.
 - Notes are local to the device; there is no sync, cloud backup, or import yet. PDF export is available.
 - Continuous vertical scrolling uses a two-finger drag so one-finger drawing stays untouched, and the page stack has no previous/next buttons.
 - Media insertion and collaboration are not implemented yet.
@@ -286,7 +294,7 @@ This is intentionally a compact version of a full note-taking app:
 The interface follows [DESIGN.md](DESIGN.md):
 
 - **Brand**: Ink Blue `#2563EB`, with Focus Azure containers
-- **Paper**: `#FCFCFA` / `#FBF8F1` fill that covers the entire editor
+- **Paper**: `#FCFCFA` / `#FBF8F1` in light mode; `#1B2432` / `#141B26` with slate rules in dark mode
 - **Ink and text**: `#0F172A`, `#475569`, `#94A3B8`
 - **Accents**: highlighter yellow `#FEF08A`, mint `#10B981`, tag purple `#8B5CF6`
 - **Covers**: Navy Leather, Terracotta, Forest Sage, Pastel Lavender and Charcoal

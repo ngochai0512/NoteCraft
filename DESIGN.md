@@ -21,7 +21,8 @@
 * **Canvas Neutral / Desk Backdrop**: `#F3F4F6` (Gray-100 — realistic desk background)
 * **Paper Surface Default**: `#FCFCFA` (Warm off-white, reduces eye strain vs pure `#FFFFFF`)
 * **Paper Surface Ivory**: `#FBF8F1` (Classic notebook tint)
-* **Paper Surface Dark / Slate (Dark Mode)**: `#1E293B`
+* **Paper Surface Dark / Slate (Dark Mode)**: `#1B2432` → `#141B26` vertical gradient
+* **Dark Paper Rule / Grid**: `#3A4A5F` (margin `#9F3B3B`, dots `#66788F`)
 * **Toolbar / Chrome Surface**: `#FFFFFF` (Glass-morphism blur `backdrop-blur-md` with `rgba(255, 255, 255, 0.88)`)
 * **Divider & Border Rules**: `#E5E7EB` (Subtle boundary definitions)
 * **Paper Line / Grid Color**: `#E2E8F0` (Rule lines, dot grid at 30% opacity)
@@ -96,6 +97,7 @@
   7. Sticky Note with a colored card, wrapped text, direct drag-to-move and tap-to-edit
   8. Media / Camera Insert
 * **Contextual Sub-bar**: Recently used inks + color dots (3 quick-swap presets) + Stroke width selectors (0.3mm, 0.7mm, 1.5mm) + Undo/Redo controls.
+* **Selection Bar**: Appears when a lasso selection exists or the clipboard holds items. Shows the selected-item count and scrollable Copy, Cut, Paste, Duplicate, Delete and Clear actions. Dragging a corner handle resizes the selection; dragging the handle above the box rotates it.
 
 ### 2. Digital Notebook Card (Documents Home)
 * Realistic ratio (`3:4`) notebook preview with spine binding, leather/matte finish, ribbon bookmark, label badge, and edited timestamp.
@@ -117,6 +119,7 @@
   * Checklist
   * Blank Paper
 * The paper fills the entire editor viewport edge-to-edge; there is no desk backdrop, page border, or drop shadow.
+* In dark mode the paper becomes a deep slate gradient with muted rules, and dark ink/text is lifted toward warm white at render time. Stored ink colors never change; PDF and PNG exports stay on light paper.
 * Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
 * Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
 * A straight-edge ruler can be toggled on from the zoom controls. Its handle moves and rotates the guide, and strokes that start near the edge snap to a perfectly straight line.
@@ -133,7 +136,8 @@
 * A dedicated full screen opened from the library or editor, never a dialog.
 * Rows use the same icon tile, title, description and trailing-control rhythm as the rest of the app.
 * Appearance: system, light or dark theme.
-* Editor: default tool, default paper for new pages, autosave indicator toggle.
+* Editor: default tool, default notebook template, default paper for new pages, autosave indicator toggle.
+* New notebooks use the default template; **New from template** in the library opens a preview chooser with one row per template.
 * Input: stylus-only mode ignores finger drawing and palm touches while two-finger pan and zoom remain available.
 * Storage and offline status are described in a read-only section.
 

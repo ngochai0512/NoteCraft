@@ -42,6 +42,7 @@ Do not answer from memory or guess APIs. Read the files that own the behavior yo
 - `app/src/main/java/com/notecraft/ui/library/LibraryScreen.kt` — note library.
 - `app/src/main/java/com/notecraft/ui/settings/SettingsScreen.kt` — dedicated preferences screen.
 - `app/src/main/java/com/notecraft/ui/components/CoverToneDialog.kt` — notebook cover chooser.
+- `app/src/main/java/com/notecraft/ui/components/NoteTemplateDialog.kt` — new-from-template chooser.
 - `app/src/main/java/com/notecraft/ui/components/NoteThumbnail.kt` — cached library thumbnails.
 - `app/src/main/java/com/notecraft/util/PdfExporter.kt` — PDF rendering and export.
 - `app/src/main/java/com/notecraft/util/PageSharer.kt` — PNG page sharing through `FileProvider`.
@@ -96,7 +97,7 @@ Available AVDs in this environment may include `Pixel_10_Pro_XL` and `Pixel_Tabl
 auto-rotate to test portrait and landscape; the app declares `fullUser` orientation.
 
 Pure logic tests live under `app/src/test/java` (`GeometryTest.kt`, `PageReorderTest.kt`,
-`ModelTest.kt`, `NoteOrganizationTest.kt`, and `PageRangeTest.kt`). Run them with `./gradlew :app:testDebugUnitTest --offline`. Run a single class while
+`ModelTest.kt`, `NoteOrganizationTest.kt`, `PageRangeTest.kt`, and `PaperInkTest.kt`). Run them with `./gradlew :app:testDebugUnitTest --offline`. Run a single class while
 iterating with `./gradlew :app:testDebugUnitTest --tests "com.notecraft.util.GeometryTest" --offline`.
 UI tests are not set up yet; do not add instrumentation or Robolectric dependencies without approval.
 Do not claim runtime verification unless you ran the app on a device or emulator.
@@ -157,8 +158,10 @@ MainActivity
   back to `BALL_PEN`, and malformed items are skipped instead of failing the whole note.
 - Tool preferences (per-tool color/width) live in `SharedPreferences` `notecraft_tool_prefs`.
   Recently used inks (`recent_colors`) and the eraser mode (`eraser_mode`) live there too.
-- App preferences (theme, default tool, default paper for new pages, autosave indicator, stylus-only
-  mode) live in `SharedPreferences` `notecraft_settings`.
+- App preferences (theme, default tool, default notebook template, default paper for new pages,
+  autosave indicator, stylus-only mode) live in `SharedPreferences` `notecraft_settings`. The
+  default template is stored under `default_note_template`; the value is a `NoteTemplate` name and
+  missing values fall back to `BLANK`.
 - Do not add network access, cloud sync, accounts, or a database without explicit approval.
 
 ## 6. Editor rendering and Jetpack Ink
@@ -173,6 +176,11 @@ Key rules:
 - **Paper stays borderless.** `drawPaperSurface()` fills the viewport. In the vertical page stack,
   each page's background is drawn inside its own page bounds, separated by the page gap. Do not
   reintroduce the desk gradient, page drop shadow, rounded sheet, or page border.
+- **Dark paper follows the app theme.** `NoteCraftTheme` provides `LocalDarkPaper`; paper, rules,
+  grids, selection frames, thumbnails, and template previews pass it into `PageRenderer`. Dark ink
+  and text are mapped at render time by `paperInkColor` (stored colors are never modified) and
+  highlighter blending switches from multiply to screen. PDF export and PNG sharing intentionally
+  pass `darkPaper = false` so shared documents stay light.
 - Paper templates are BLANK, LINED, GRID, DOTTED, CORNELL, PLANNER, WEEKLY, MUSIC, STORYBOARD and
   CHECKLIST. The editor renders template structures inside the page bounds; the picker preview in
   `EditorDialogs.kt` must stay exhaustive when a template is added.
@@ -254,7 +262,16 @@ Key rules:
   menu, except the selection toolbar that appears when a lasso selection exists.
 - Ink tools use pressure. Custom tools read the pressure captured on `Pt`.
 - Laser is a fading transient trail and is never saved.
-- Lasso supports select, move, duplicate, and delete. Move by dragging inside the selection bounds.
+- Lasso supports select, move, resize, rotate, copy, cut, paste, duplicate, and delete. Move by
+  dragging inside the selection bounds. Drag a corner handle to resize around the opposite corner;
+  drag the round handle above the box to rotate around the selection center. Handle sizes and hit
+  tolerances must stay in dp so they match at every zoom level. Rotating a mixed selection rotates
+  strokes precisely and moves text boxes around the center while keeping the glyphs upright.
+  The clipboard is app-session state in the ViewModel and survives closing a notebook; pasted items
+  get new ids and a staggered offset, and a paste is one undo step.
+- `New notebook` uses `AppSettings.defaultNoteTemplate`; **New from template** opens
+  `NoteTemplateDialog` and creates a one-page notebook with that template's paper. `BLANK` keeps
+  honoring `defaultPageBackground` for backward compatibility.
 - Text tool: tap empty paper to add text; tap existing text to edit it; drag the bottom-right box
   handle to resize its wrapping width. Text alignment and formatting (bold, italic, underline,
   bullet/numbered lists, line spacing, highlight) live in the text dialog and apply to new and
@@ -336,11 +353,13 @@ Before reporting a task complete, confirm all of the following:
 - [ ] No new compiler or lint warnings were introduced.
 - [ ] If an emulator/device is available: install, launch, and check logcat for crashes.
 - [ ] Exercise the affected flow:
-  - library: create, open, rename, search, sort, duplicate, delete, pin/unpin
+  - library: create from the default template, create from template chooser, open, rename, search,
+    sort, duplicate, delete, pin/unpin
   - drawing: fountain, ball, brush, pencil, marker, shapes, tape, laser, text, lasso
   - Ink wet stroke → dry NoteCraft stroke handoff
   - zoom in/out, pan, and drawing alignment at 100% and zoomed
-  - partial and object eraser across a stroke, selection move/duplicate/delete, undo/redo
+  - partial and object eraser across a stroke, selection move/resize/rotate, copy/cut/paste,
+    duplicate/delete, and undo/redo
   - page add/duplicate/delete/reorder, bookmark a page, every background template
   - text wrapping, alignment, formatting, lists, highlight, and corner resize
   - sticky note add/edit/move/erase
@@ -351,7 +370,9 @@ Before reporting a task complete, confirm all of the following:
   - stylus-only finger rejection on a device with a stylus (if available)
   - two-finger vertical page scrolling, page indicator, and page-drawer jump
   - cover-tone chooser and persistence after relaunch
-  - settings: theme override, default tool, default paper, autosave indicator
+  - settings: theme override, default tool, default notebook template, default paper, autosave
+    indicator
+  - dark paper: editor, library thumbnails, template previews, and light PDF/PNG exports
   - PDF export of a single-page and multi-page notebook, then open the PDF
   - close/reopen the editor and relaunch the app to verify autosave
   - phone portrait and landscape; tablet if available
