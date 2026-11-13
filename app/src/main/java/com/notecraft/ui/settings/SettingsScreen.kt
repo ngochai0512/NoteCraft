@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.notecraft.model.DefaultToolChoices
+import com.notecraft.model.NoteTemplate
 import com.notecraft.model.PageBackground
 import com.notecraft.model.ThemeMode
 import com.notecraft.ui.NoteCraftViewModel
@@ -146,6 +147,15 @@ fun SettingsScreen(viewModel: NoteCraftViewModel) {
                         value = settings.defaultTool.label,
                         options = DefaultToolChoices.map { it.label to it },
                         onSelect = viewModel::setDefaultTool,
+                    )
+                    SectionDivider()
+                    SettingDropdownRow(
+                        icon = Icons.Outlined.Description,
+                        title = "Default notebook template",
+                        description = "The starting paper used by New notebook.",
+                        value = settings.defaultNoteTemplate.label,
+                        options = NoteTemplate.entries.map { it.label to it },
+                        onSelect = viewModel::setDefaultNoteTemplate,
                     )
                     SectionDivider()
                     SettingDropdownRow(

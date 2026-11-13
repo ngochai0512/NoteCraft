@@ -143,6 +143,23 @@ enum class PageBackground(val label: String) {
     CHECKLIST("Checklist"),
 }
 
+/** Ready-made notebook starting points. Each template creates one page. */
+enum class NoteTemplate(
+    val label: String,
+    val background: PageBackground,
+) {
+    BLANK("Untitled notebook", PageBackground.BLANK),
+    RULED("Ruled notebook", PageBackground.LINED),
+    GRID("Grid notebook", PageBackground.GRID),
+    DOTTED("Dotted notebook", PageBackground.DOTTED),
+    CORNELL("Cornell notebook", PageBackground.CORNELL),
+    PLANNER("Daily planner", PageBackground.PLANNER),
+    WEEKLY("Weekly planner", PageBackground.WEEKLY),
+    MUSIC("Music notebook", PageBackground.MUSIC),
+    STORYBOARD("Storyboard", PageBackground.STORYBOARD),
+    CHECKLIST("Checklist", PageBackground.CHECKLIST),
+}
+
 /** Theme preference exposed by the dedicated settings screen. */
 enum class ThemeMode(val label: String) {
     SYSTEM("System"),
@@ -155,6 +172,7 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val defaultTool: ToolType = ToolType.BALL_PEN,
     val defaultPageBackground: PageBackground? = null,
+    val defaultNoteTemplate: NoteTemplate = NoteTemplate.BLANK,
     val showAutosaveIndicator: Boolean = true,
     val stylusOnlyMode: Boolean = false,
 )

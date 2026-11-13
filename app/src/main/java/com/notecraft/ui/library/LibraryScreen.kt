@@ -52,12 +52,14 @@ import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -100,12 +102,15 @@ import com.notecraft.ui.components.ConfirmDialog
 import com.notecraft.ui.components.CoverToneDialog
 import com.notecraft.ui.components.ErrorBanner
 import com.notecraft.ui.components.NoteOrganizationDialog
+import com.notecraft.ui.components.NoteTemplateDialog
 import com.notecraft.ui.components.NoteThumbnail
 import com.notecraft.ui.components.TextEntryDialog
 import com.notecraft.ui.theme.InkBlackColor
 import com.notecraft.ui.theme.InkSlate
+import com.notecraft.ui.theme.LocalDarkPaper
 import com.notecraft.ui.theme.NotebookCoverTones
 import com.notecraft.ui.theme.PaperIvory
+import com.notecraft.ui.theme.PaperSurfaceDark
 import com.notecraft.ui.theme.notebookToneFor
 import com.notecraft.util.PdfExporter
 import com.notecraft.util.formatNoteDate
@@ -134,6 +139,7 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
     var deleteNote by remember { mutableStateOf<Note?>(null) }
     var coverNote by remember { mutableStateOf<Note?>(null) }
     var organizeNote by remember { mutableStateOf<Note?>(null) }
+    var showTemplateDialog by remember { mutableStateOf(false) }
     var exportNote by remember { mutableStateOf<Note?>(null) }
 
     val context = LocalContext.current
@@ -342,17 +348,32 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
         },
         floatingActionButton = {
             if (library.notes.isNotEmpty()) {
-                ExtendedFloatingActionButton(
-                    onClick = { viewModel.createNote() },
-                    icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
-                    text = { Text("New notebook") },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = RoundedCornerShape(16.dp),
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.windowInsetsPadding(
                         WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
                     ),
-                )
+                ) {
+                    FloatingActionButton(
+                        onClick = { showTemplateDialog = true },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.NoteAdd,
+                            contentDescription = "New from template",
+                        )
+                    }
+                    ExtendedFloatingActionButton(
+                        onClick = { viewModel.createNote() },
+                        icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                        text = { Text("New notebook") },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = RoundedCornerShape(16.dp),
+                    )
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -433,6 +454,7 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
                 library.notes.isEmpty() -> {
                     EmptyLibrary(
                         onCreate = { viewModel.createNote() },
+                        onOpenTemplates = { showTemplateDialog = true },
                         isLandscape = isLandscape,
                         isTablet = isTablet,
                         modifier = Modifier.fillMaxSize(),
@@ -572,6 +594,16 @@ fun LibraryScreen(viewModel: NoteCraftViewModel) {
         )
     }
 
+    if (showTemplateDialog) {
+        NoteTemplateDialog(
+            onDismiss = { showTemplateDialog = false },
+            onSelect = { template ->
+                showTemplateDialog = false
+                viewModel.createNote(template)
+            },
+        )
+    }
+
     organizeNote?.let { note ->
         NoteOrganizationDialog(
             initialFolder = note.folder,
@@ -625,6 +657,7 @@ private fun LibraryError(
 @Composable
 private fun EmptyLibrary(
     onCreate: () -> Unit,
+    onOpenTemplates: () -> Unit,
     isLandscape: Boolean,
     isTablet: Boolean,
     modifier: Modifier = Modifier,
@@ -668,6 +701,8 @@ private fun EmptyLibrary(
                 )
                 Spacer(Modifier.height(16.dp))
                 CreateNotebookButton(onCreate = onCreate)
+                Spacer(Modifier.height(4.dp))
+                TemplateButton(onOpenTemplates = onOpenTemplates)
             }
         }
     } else {
@@ -694,7 +729,22 @@ private fun EmptyLibrary(
             )
             Spacer(Modifier.height(24.dp))
             CreateNotebookButton(onCreate = onCreate)
+            Spacer(Modifier.height(4.dp))
+            TemplateButton(onOpenTemplates = onOpenTemplates)
         }
+    }
+}
+
+@Composable
+private fun TemplateButton(onOpenTemplates: () -> Unit) {
+    TextButton(onClick = onOpenTemplates) {
+        Icon(
+            Icons.AutoMirrored.Outlined.NoteAdd,
+            contentDescription = null,
+            modifier = Modifier.size(17.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text("New from template")
     }
 }
 
@@ -807,6 +857,7 @@ private fun NoteCard(
     val previewPage = remember(note.pages) {
         note.pages.firstOrNull { !it.isEmpty } ?: note.pages.firstOrNull()
     }
+    val darkPaper = LocalDarkPaper.current
 
     Column(
         modifier = Modifier
@@ -850,7 +901,7 @@ private fun NoteCard(
                     .fillMaxSize()
                     .padding(start = 20.dp, top = 14.dp, end = 12.dp, bottom = 76.dp)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(PaperIvory),
+                    .background(if (darkPaper) PaperSurfaceDark else PaperIvory),
             ) {
                 NoteThumbnail(
                     page = previewPage,
