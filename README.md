@@ -1,8 +1,10 @@
 # NoteCraft
 
-A native Android note-taking app built with **Kotlin** and **Jetpack Compose**. NoteCraft brings a GoodNotes-style handwriting surface to Android: draw with pens and pencils, highlight text, erase, insert shapes and typed text, select with a lasso, and keep everything organized in a searchable note library.
+A native Android note-taking app built with **Kotlin** and **Jetpack Compose**. NoteCraft brings a completely new handwriting surface and experience to Android: draw with pens and pencils, highlight text, erase, insert shapes and typed text, select with a lasso, and keep everything organized in a searchable note library.
 
 The app is fully offline. Notes are stored as readable JSON files in the app's internal storage.
+
+This app's name is insprired by a collection of free and open-source apps made by ArtCraft (not made and distributed by ArtCraft). Also, this app is built for the group project presentation in January 2027.
 
 ```
 Package: com.notecraft
