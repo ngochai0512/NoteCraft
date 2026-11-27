@@ -4,7 +4,7 @@
 * **Product Archetype**: Tactile, modern digital stationery and vector note-taking ecosystem.
 * **Core Value Proposition**: The seamless blend of tactile paper stationery aesthetic with high-precision digital productivity tools (stylus-first, document management, template flexibility).
 * **Brand Personality**: Scholarly, focused, tactile, refined, clean, unobtrusive. The interface recedes into the background so the user's handwritten thoughts, sketches, and notes take center stage.
-* **Target Device**: Mobile / Tablet-first responsive layout (Optimized for iOS/iPadOS tactile standards, ~390px mobile view with tablet scaling).
+* **Target Device**: Android phones and tablets, portrait and landscape, with edge-to-edge paper and display-cutout-safe chrome.
 
 ---
 
@@ -18,14 +18,14 @@
 * **Highlighter Accent (Vibrant Amber)**: `#F59E0B`
 
 ### Surface & Background Tokens (Tactile Paper Foundation)
-* **Canvas Neutral / Desk Backdrop**: `#F3F4F6` (Gray-100 — realistic desk background)
+* **Window / Chrome Background**: `#F3F4F6` (Gray-100; sits behind Compose surfaces — the editor paper itself is borderless)
 * **Paper Surface Default**: `#FCFCFA` (Warm off-white, reduces eye strain vs pure `#FFFFFF`)
 * **Paper Surface Ivory**: `#FBF8F1` (Classic notebook tint)
 * **Paper Surface Dark / Slate (Dark Mode)**: `#1B2432` → `#141B26` vertical gradient
 * **Dark Paper Rule / Grid**: `#3A4A5F` (margin `#9F3B3B`, dots `#66788F`)
-* **Toolbar / Chrome Surface**: `#FFFFFF` (Glass-morphism blur `backdrop-blur-md` with `rgba(255, 255, 255, 0.88)`)
+* **Toolbar / Chrome Surface**: `#FFFFFF` (Material 3 surface with `#E5E7EB` outline and elevation; no heavy blur)
 * **Divider & Border Rules**: `#E5E7EB` (Subtle boundary definitions)
-* **Paper Line / Grid Color**: `#E2E8F0` (Rule lines, dot grid at 30% opacity)
+* **Paper Line / Grid Color**: `#E2E8F0` (Rule lines and graph grid; dots use `#94A3B8` at 45% opacity)
 
 ### Typography & Ink Hues
 * **Ink Black (Text Primary)**: `#0F172A` (Rich slate black, high legibility)
@@ -47,38 +47,38 @@
 
 ## 3. Typography & Hierarchy System
 
-* **Primary Sans Font**: `-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", sans-serif`
-* **Tactile Handwriting / Title Font (Optional Covers)**: `"Caveat", "Architects Daughter", cursive`
+* **Primary Sans Font**: Platform sans-serif (`FontFamily.SansSerif`, Roboto on Android)
+* **Notebook Cover Labels**: System sans-serif with bold, uppercase label styling; no bundled handwriting font
 
 ### Scale
-* **Display Large (Notebook Title / Library Heading)**: `24px` | SemiBold (600) | Line-height: `1.25`
-* **Title / Modal Header**: `18px` | SemiBold (600) | Line-height: `1.3`
-* **Body Regular (List titles, tool popovers)**: `15px` | Regular (400) | Line-height: `1.4`
-* **Body Medium (Active button, tool preset)**: `14px` | Medium (500) | Line-height: `1.4`
-* **Caption / Tooltips / Meta Labels**: `12px` | Medium (500) | Tracking: `+0.2px`
-* **Micro Labels (Page numbers, zoom %)**: `10px` | Bold (700) | Uppercase
+* **Display Large (Notebook Title / Library Heading)**: `24sp` | SemiBold (600) | Line-height: `1.25`
+* **Title / Modal Header**: `18sp` | SemiBold (600) | Line-height: `1.3`
+* **Body Regular (List titles, tool popovers)**: `15sp` | Regular (400) | Line-height: `1.4`
+* **Body Medium (Active button, tool preset)**: `14sp` | Medium (500) | Line-height: `1.4`
+* **Caption / Tooltips / Meta Labels**: `12sp` | Medium (500) | Tracking: `+0.2sp`
+* **Micro Labels (Page numbers, zoom %)**: `10sp` | Bold (700) | Uppercase
 
 ---
 
 ## 4. Spacing, Elevation & Shapes
 
 ### Spacing Scale
-* `4px` (xs): Spacing between tool icons, pill padding
-* `8px` (sm): Tool ribbon gap, badge padding
-* `12px` (md): Document card inner padding
-* `16px` (lg): Screen edge gutter, floating tool margin
-* `24px` (xl): Section separation
+* `4dp` (xs): Spacing between tool icons, pill padding
+* `8dp` (sm): Tool ribbon gap, badge padding
+* `12dp` (md): Document card inner padding
+* `16dp` (lg): Screen edge gutter, floating tool margin
+* `24dp` (xl): Section separation
 
 ### Border Radius & Shapes
-* **Tool Icons & Pills**: `8px` to `12px` (Soft squircle)
-* **Floating Toolbars**: `16px` to `20px` (Pill/capsule floating dock)
-* **Notebook Covers**: `10px` (with right-edge `2px` subtle spine crease simulation)
-* **Modals & Bottom Sheets**: `24px` (Top corners rounded)
+* **Tool Icons & Pills**: `8dp` to `12dp` (Soft squircle)
+* **Floating Toolbars**: `16dp` to `20dp` (Pill/capsule floating dock)
+* **Notebook Covers**: `10dp` (with a subtle right-edge spine crease)
+* **Modals & Bottom Sheets**: `24dp` (Top corners rounded)
 
 ### Shadows & Depth (Elevation)
-* **Level 1 (Notebook in Library)**: `0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05)`
-* **Level 2 (Active Tool Floating Ribbon)**: `0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05)`
-* **Level 3 (Modal Sheet / Popover Palette)**: `0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08)`
+* **Level 1 (Notebook in Library)**: 6–10 dp surface shadow plus 2 dp label badges
+* **Level 2 (Active Tool Floating Ribbon)**: 10–12 dp surface shadow
+* **Level 3 (Modal Sheet / Popover Palette)**: Material 3 dialog/popover elevation
 * **Book Spine Gradient**: `linear-gradient(to right, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.02) 6%, transparent 12%)`
 
 ---
@@ -86,22 +86,22 @@
 ## 5. Signature UI Components
 
 ### 1. Floating Pen & Tool Ribbon
-* **Placement**: Top pinned bar (or floating top ribbon) with blurred white surface (`backdrop-blur-md`).
+* **Placement**: Top pinned bar (or floating top ribbon) with a Material 3 surface, `#E5E7EB` outline, and elevation.
 * **Tool Order**:
-  1. Pen Tool (Fountain, Ballpoint, Brush)
-  2. Highlighter (Semi-transparent overlay preview)
-  3. Precision Eraser (Partial vs Object toggle)
-  4. Lasso Selection Tool
-  5. Stickers / Elements Picker
+  1. Pen tools (Fountain, Ballpoint, Brush)
+  2. Pencil (textured graphite)
+  3. Highlighter / Marker (semi-transparent overlay)
+  4. Precision Eraser (Partial vs Object toggle)
+  5. Lasso Selection Tool
   6. Text Box (`T`) with wrapping, alignment, bold/italic/underline, lists, line spacing, highlight, and a corner resize handle
   7. Sticky Note with a colored card, wrapped text, direct drag-to-move and tap-to-edit
-  8. Media / Camera Insert
-* **Contextual Sub-bar**: Recently used inks + color dots (3 quick-swap presets) + Stroke width selectors (0.3mm, 0.7mm, 1.5mm) + Undo/Redo controls.
+  * The overflow menu holds Shapes (line, arrow, rectangle, ellipse), Tape, and Laser.
+* **Contextual Sub-bar**: Recently used inks, the 12-color preset palette plus a custom HSV picker, a per-tool width slider with three quick presets, and tool-specific controls. Undo and redo live in the editor top bar.
 * **Selection Bar**: Appears when a lasso selection exists or the clipboard holds items. Shows the selected-item count and scrollable Copy, Cut, Paste, Duplicate, Delete and Clear actions. Dragging a corner handle resizes the selection; dragging the handle above the box rotates it.
 
 ### 2. Digital Notebook Card (Documents Home)
 * Realistic ratio (`3:4`) notebook preview with spine binding, leather/matte finish, ribbon bookmark, label badge, and edited timestamp.
-* Quick-action context menu (`...`) for pin/unpin, tags/folder, cover tone, PDF export, duplicate and trash.
+* Quick-action context menu (`...`) for pin/unpin, rename, tags/folder, cover tone, PDF export, duplicate and delete.
 * Pinned notebooks show a pin badge and stay above unpinned notebooks for every sort mode.
 * Folders and tags appear on the card and can be used as library filters; search covers titles, folders, and tags.
 * Cover-tone chooser with automatic, navy leather, terracotta, forest sage, pastel lavender and charcoal options.
@@ -120,7 +120,7 @@
   * Blank Paper
 * The paper fills the entire editor viewport edge-to-edge; there is no desk backdrop, page border, or drop shadow.
 * In dark mode the paper becomes a deep slate gradient with muted rules, and dark ink/text is lifted toward warm white at render time. Stored ink colors never change; PDF and PNG exports stay on light paper.
-* Guidelines and paper tint continue across the full canvas, anchored to the page origin so they pan and zoom with the content.
+* Guidelines and paper tint pan and zoom with the content; the tint fills the viewport, while each page's guideline pattern is drawn inside that page's bounds.
 * Drawing is accepted anywhere on the visible paper, including beyond the logical page bounds.
 * A straight-edge ruler can be toggled on from the zoom controls. Its handle moves and rotates the guide, and strokes that start near the edge snap to a perfectly straight line.
 * Pages are arranged in a continuous vertical stack with a subtle divider between sheets. Two-finger drag scrolls with inertia; a passive page indicator shows the current page, and the thumbnail drawer jumps directly to a page. Previous/next arrow controls are intentionally removed.
@@ -128,8 +128,8 @@
 * The eraser removes only the touched portion of a stroke; shapes and text are removed whole, and each erase gesture is one undo step.
 
 ### 4. Page Thumbnail & Bookmarks
-* 2-column or 3-column micro-page grid.
-* Quick add page before/after, bookmark star toggle on each thumbnail, and drag-and-drop reordering with a lift/shadow indicator.
+* Adaptive micro-page grid: 3 columns on phones in portrait, 4 in landscape, and 3–6 on tablets.
+* A quick add-page tile appends a page; each thumbnail has a bookmark star toggle, and long-press drag reorders with a lift/shadow indicator.
 * The star uses Highlighter Amber for bookmarked pages and a muted outline otherwise.
 
 ### 5. Settings Screen
@@ -147,5 +147,5 @@
 * **Tool Switching**: Instant with crisp scale bounce (`scale(0.92)` on tap down, returning to `scale(1)`).
 * **Palette Expansion**: Smooth accordion drop with slight spring curve (`cubic-bezier(0.16, 1, 0.3, 1)`).
 * **Page Scrolling**: Continuous vertical movement through stacked pages with two-finger drag; no arrow buttons or page-turn animation.
-* **Undo / Redo Haptic Feedback**: Visual pulse indicator on toolbar state change.
+* **Undo / Redo**: Haptic feedback on use; the top-bar icons reflect availability and mirror the ViewModel's history state.
 * **PDF Export**: Uses the system document picker, writes A4 pages at 150 dpi, and keeps the existing paper, template and ink rendering. The current page can be exported alone or shared as a PNG through the system share sheet.

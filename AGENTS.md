@@ -12,7 +12,7 @@ surface.
 - **Kotlin + Jetpack Compose + Material 3** (no XML layouts and no legacy Views UI).
 - Package `com.notecraft`; single Gradle module `:app`.
 - `minSdk 26`, `compileSdk 36`, `targetSdk 36`.
-- Gradle 9.8.1, AGP 9.5.0, Kotlin 2.2.10, JVM target 17.
+- Gradle 9.8.1, AGP 9.5.2, Kotlin 2.2.10, JVM target 17.
 - One `MainActivity`, one app-wide `NoteCraftViewModel`, JSON file persistence.
 - **Jetpack Ink 1.0.0** provides low-latency authoring for the fountain pen, ball pen, brush pen,
   and highlighter.
@@ -47,23 +47,22 @@ Do not answer from memory or guess APIs. Read the files that own the behavior yo
 - `app/src/main/java/com/notecraft/util/PdfExporter.kt` — PDF rendering and export.
 - `app/src/main/java/com/notecraft/util/PageSharer.kt` — PNG page sharing through `FileProvider`.
 - `app/src/main/java/com/notecraft/util/Geometry.kt` — hit tests, partial eraser, lasso selection.
+- `app/src/main/java/com/notecraft/util/NoteOrganization.kt` — folder/tag normalization and library filters.
+- `app/src/main/java/com/notecraft/util/PageRange.kt` — PDF page-range validation.
+- `app/src/main/java/com/notecraft/util/PageReorder.kt` — page-drawer drag-to-reorder mapping.
+- `app/src/main/java/com/notecraft/util/TextLayout.kt` — cached text layouts and measured bounds.
+- `app/src/main/java/com/notecraft/ui/components/NoteOrganizationDialog.kt` — folder and tag editor.
 - `app/src/main/AndroidManifest.xml`, `app/build.gradle.kts`, `settings.gradle.kts`.
 
 If code and documentation disagree, say so and resolve it deliberately rather than silently picking
 one.
-
-For general Android/Kotlin/Compose/Material 3 questions, consult the personal
-`android-native-dev` skill at `/Users/ngochai/Desktop/android-native-dev/SKILL.md` and its
-`references/`. It lives outside this repo and is never committed. Where it conflicts with this
-file, this file wins: pinned versions (no BOM), single Gradle module, no flavors/`BuildConfig`,
-no navigation library, no network/database/DI.
 
 ## 3. Build, install, verify
 
 Use the project wrapper and Android Studio's bundled JDK:
 
 ```bash
-cd /Users/ngochai/Desktop/NoteCraft
+cd /path/to/NoteCraft
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:assembleDebug
 ```
@@ -116,14 +115,16 @@ rerun with `--stacktrace`.
 MainActivity
 └─ NoteCraftTheme
    └─ NoteCraftApp
+      ├─ SettingsScreen
       ├─ LibraryScreen
       └─ EditorScreen
 ```
 
-- `NoteCraftViewModel` (`AndroidViewModel`) owns `library: LibraryState` and `editor: EditorState?`
-  as Compose `mutableStateOf`. It is the single source of truth.
-- There is no navigation library. `NoteCraftApp` switches between the library and editor on
-  `viewModel.editor != null`.
+- `NoteCraftViewModel` (`AndroidViewModel`) owns `library: LibraryState`, `editor: EditorState?`,
+  `settings`, `settingsOpen`, and `saveError` as Compose `mutableStateOf`. It is the single source
+  of truth.
+- There is no navigation library. `NoteCraftApp` switches between the settings screen, editor, and
+  library on `settingsOpen` and `editor != null`.
 - `EditorState` derives `page`, `color`, `width`, selection, and undo/redo flags. Do not duplicate
   this state in composables; hoist actions back to the ViewModel.
 - Do not mutate `Note`, `Page`, stroke, or text lists in place. Models are immutable data classes;
@@ -143,11 +144,11 @@ MainActivity
   transient and must not be persisted; eraser strokes are not stored.
 - Notes are JSON files at `filesDir/notes/<note-id>.json`, format `version = 1`. Pages contain
   strokes, text items, and sticky notes; a page may store `bookmarked`, and a note may store an
-  optional `coverTone` name or `pinned` flag. Text items may store `width`, `alignment`, `bold`,
-  `italic`, `underline`, `listStyle`, `lineSpacing`, and `highlightColor`; missing values mean a
-  legacy auto-width, left-aligned, plain box. Sticky notes store position, size, text, color, and
-  font size. The repository writes via a temporary file and atomic rename under `Dispatchers.IO`
-  with a `Mutex`.
+  optional `coverTone` name, a `pinned` flag, an optional `folder`, and a normalized `tags` list.
+  Text items may store `width`, a measured `height`, `alignment`, `bold`, `italic`, `underline`,
+  `listStyle`, `lineSpacing`, and `highlightColor`; missing values mean a legacy auto-width,
+  left-aligned, plain box. Sticky notes store position, size, text, color, and font size. The
+  repository writes via a temporary file and atomic rename under `Dispatchers.IO` with a `Mutex`.
 - Treat JSON field names and `SharedPreferences` keys as immutable on-disk identifiers. Never rename
   or repurpose one without a migration path and tolerant defaults; a rename silently resets notes or
   user preferences.
@@ -166,7 +167,7 @@ MainActivity
 
 ## 6. Editor rendering and Jetpack Ink
 
-`DrawingCanvas` owns the viewport (`zoom` 1–8, unbounded two-finger pan), gesture state machine,
+`DrawingCanvas` owns the viewport (`zoom` 1–8, two-finger pan clamped to the page stack), gesture state machine,
 preview stroke, lasso preview, and laser trail. `PageRenderer` draws the paper, background pattern,
 strokes, text, and selection. Sticky notes are page objects rendered above ink and text; they are
 included in thumbnails, PDF export, and page sharing.
@@ -230,11 +231,10 @@ Key rules:
   documented design token.
 - Sizes in `dp`, text in `sp`. Keep touch targets at least ~48×48 dp. Use `maxLines` + ellipsis for
   variable text.
-- Follow the skill's numeric UI checks by reference (`android-native-dev/SKILL.md` §7): 8dp spacing
-  grid, 4.5:1 body-text / 3:1 large-text and component contrast, 100–500ms animation buckets.
-  Touch targets, dark theme, and `contentDescription` on interactive elements are hard requirements,
-  not nice-to-haves. Never put the element type in an accessibility label (e.g. "Save", not
-  "Save button").
+- Keep UI checks numeric: 8dp spacing grid, 4.5:1 body-text / 3:1 large-text and component
+  contrast, 100–500ms animation buckets. Touch targets, dark theme, and `contentDescription` on
+  interactive elements are hard requirements, not nice-to-haves. Never put the element type in an
+  accessibility label (e.g. "Save", not "Save button").
 - Responsive breakpoints currently used:
   - tablet: `smallestScreenWidthDp >= 600`
   - compact height: `screenHeightDp < 480`
@@ -425,8 +425,6 @@ existing model over speculative abstractions.
   separate from feature work; do not bundle unrelated fixes, formatting, and features in one diff.
 - Do not commit or push unless the user asks.
 - Never commit `local.properties`, `.idea/`, build outputs, APKs/AABs, `.gradle/`, or `.DS_Store`.
-- The `android-native-dev` skill lives outside this repo and is never committed. Nothing in the
-  build may depend on it being present.
 - Update `README.md` and `DESIGN.md` when behavior, persistence, canvas rules, orientation, or
   cutout behavior changes.
 - Update this file deliberately when a rule is wrong or repeatedly causes trouble.

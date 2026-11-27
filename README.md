@@ -24,7 +24,7 @@ UI: Jetpack Compose + Material 3
 - **Tape** — translucent washi-style strip for covering and decorating
 - **Laser pointer** — a red trail that fades when you lift your finger
 - **Pencil** — textured graphite line
-- **Text** — resizable typed text boxes with wrapping, left/center/right alignment, bold/italic/underline, bullet/numbered lists, line spacing, highlight, and edit-in-place
+- **Text** — resizable typed text boxes with wrapping, left/center/right alignment, bold/italic/underline, bullet/numbered lists, line spacing, highlight, and tap-to-edit
 - **Sticky notes** — lightweight colored callouts with wrapped text and adjustable text size; tap to add, drag to move, tap to edit
 - **Lasso** — select strokes and text to move, resize, rotate, copy/cut/paste, duplicate or delete
 - **Ruler** — toggle a draggable straight-edge guide; strokes started near it snap to a straight line
@@ -36,9 +36,9 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 ### Canvas
 
 - Edge-to-edge paper that fills the editor; no desk backdrop, page border, or drop shadow
-- Ruled, squared graph, dotted and blank paper drawn continuously across the viewport; Cornell, planner, weekly, music, storyboard and checklist templates stay page-bounded
-- Draw anywhere on the visible paper, including outside the logical page bounds
-- Pinch to zoom up to 8× with unbounded two-finger pan
+- Paper tint fills the viewport edge-to-edge; ruled, squared graph, dotted, and template guidelines are drawn inside each page's bounds and pan and zoom with the content
+- Draw on any visible page, including horizontally outside the logical page bounds
+- Pinch to zoom up to 8× with two-finger pan; vertical panning stays within the page stack
 - Dark paper follows the app theme; dark ink and text are automatically lifted for contrast, while the stored colors stay untouched
 - Floating zoom controls with fit-page, page-thumbnail, page-background, and ruler buttons
 - Straight-edge ruler guide: drag its handle to move it and slide sideways to rotate, then draw along it for perfectly straight lines
@@ -68,9 +68,9 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 ### Colors and preferences
 
 - 12 preset ink colors
-- Recently used inks shown in each tool's dropdown
+- Recently used inks shown in drawing-tool dropdowns
 - Custom HSV color picker
-- Per-tool color, size, and eraser-mode settings
+- Per-tool color and size settings, plus a shared eraser mode
 - Dedicated Settings screen (not a dialog) with a back action
 - Theme override: system, light, or dark
 - Default drawing tool, default notebook template, and default paper for new pages
@@ -92,7 +92,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 
 ## Requirements
 
-- **Android Studio** (project created with Android Studio 2026.2.2)
+- **Android Studio 2026.2 or newer**
 - **Android SDK 36**
 - **JDK 17 or newer** — Android Studio's bundled JBR (JDK 25) works
 - An Android device or emulator running **Android 8.0 (API 26)** or newer
@@ -102,7 +102,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 1. Open Android Studio.
 2. Choose **Open** and select this folder:
    ```
-   /Users/ngochai/Desktop/NoteCraft-Group-Project
+   /path/to/NoteCraft
    ```
 3. Wait for **Gradle sync** to finish.
 4. Create or select an emulator in **Tools → Device Manager**:
@@ -114,7 +114,7 @@ Tapping a tool selects it and opens that tool's color, size, and shape options i
 ### Build from the terminal
 
 ```bash
-cd ~/Desktop/NoteCraft-Group-Project
+cd /path/to/NoteCraft
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 ./gradlew assembleDebug
@@ -161,10 +161,10 @@ adb shell cmd overlay disable com.android.internal.display.cutout.emulation.tall
 `local.properties` points Gradle at the Android SDK:
 
 ```properties
-sdk.dir=/Users/ngochai/Library/Android/sdk
+sdk.dir=/path/to/Android/sdk
 ```
 
-Update that path if the SDK is installed elsewhere.
+Replace `/path/to/Android/sdk` with your local SDK location.
 
 ## Drawing gestures
 
@@ -205,31 +205,41 @@ app/src/main/
 │   ├── data/
 │   │   └── NoteRepository.kt         # JSON file persistence
 │   ├── util/
+│   │   ├── Format.kt                 # Relative note dates
 │   │   ├── Geometry.kt               # Hit tests, partial eraser, lasso, text, sticky bounds
-│   │   ├── PdfExporter.kt            # Notebook and page-to-PDF rendering
+│   │   ├── NoteOrganization.kt       # Folder/tag normalization and library filters
+│   │   ├── PageRange.kt              # Page-range validation for PDF export
+│   │   ├── PageReorder.kt            # Page drawer drag-to-reorder helper
 │   │   ├── PageSharer.kt             # PNG page rendering and Android share sheet
-│   │   └── Format.kt                 # Relative note dates
+│   │   ├── PdfExporter.kt            # Notebook and page-range PDF rendering
+│   │   └── TextLayout.kt             # Cached text layouts and measured bounds
 │   └── ui/
-│       ├── NoteCraftApp.kt           # Library ↔ editor navigation
+│       ├── NoteCraftApp.kt           # Library, editor, and settings switching
 │       ├── NoteCraftViewModel.kt     # State, undo/redo, autosave, page operations
 │       ├── theme/Theme.kt            # Material 3 colors, typography, palette
 │       ├── components/
 │       │   ├── Dialogs.kt            # Rename, confirm, and text-entry dialogs
 │       │   ├── CoverToneDialog.kt    # Notebook cover-tone chooser
+│       │   ├── NoteOrganizationDialog.kt # Folder and tag editor
 │       │   ├── NoteTemplateDialog.kt # New-from-template chooser
-│       │   └── NoteThumbnail.kt      # Library page previews
+│       │   └── NoteThumbnail.kt      # Cached library page previews
 │       ├── settings/
 │       │   └── SettingsScreen.kt     # Dedicated preferences screen
 │       ├── library/
 │       │   └── LibraryScreen.kt      # Note grid, search, sort, note actions
 │       └── editor/
-│           ├── EditorScreen.kt       # Top bar, page drawer, dialogs
+│           ├── CanvasControls.kt     # Zoom dock and ruler handle
+│           ├── CanvasDrawing.kt      # Shared canvas draw helpers and Ink conversion
 │           ├── DrawingCanvas.kt      # Gestures, drawing input, zoom/pan
-│           ├── PageRenderer.kt       # Paper, ink, pencil, shape, and text rendering
-│           ├── EditorToolbar.kt      # Tool picker, colors, widths, color picker
-│           └── EditorDialogs.kt      # Page background picker
+│           ├── EditorDialogs.kt      # Page background picker
+│           ├── EditorScreen.kt       # Top bar, page drawer, menus, dialogs
+│           ├── EditorToolbar.kt      # Compact tool ribbon and selection bar
+│           ├── EditorToolOptions.kt  # Tool options, palette, and HSV color picker
+│           ├── PageDrawer.kt         # Page thumbnail grid, reorder, and bookmarks
+│           └── PageRenderer.kt       # Paper, ink, pencil, shape, text, and sticky rendering
 └── res/
-    └── values/                       # Strings, colors, themes
+    ├── values/                       # Strings, colors, themes
+    └── values-night/                 # Dark colors and theme
 ```
 
 ## Data format
@@ -240,7 +250,7 @@ Each note is a JSON file at:
 filesDir/notes/<note-id>.json
 ```
 
-Notes contain pages, and each page contains strokes, text items, and sticky notes. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
+Files carry `version: 1`. Notes contain pages, and each page contains strokes, text items, and sticky notes. Coordinates are normalized to a **1000 × 1414** logical page, so drawings look the same at any zoom level or screen size.
 
 A note also stores an optional `coverTone` name; when absent, the library derives a stable cover tone from the note id. A note may store `pinned` to keep it above unpinned notebooks, plus an optional `folder` and a `tags` array. A page may also store `bookmarked`. A stroke saves:
 
@@ -251,11 +261,11 @@ A note also stores an optional `coverTone` name; when absent, the library derive
 - Optional shape type
 - A seed for deterministic pencil texture
 
-A text item stores its position, text, color, font size, optional `width` in page units, and an optional `alignment` (`LEFT`, `CENTER`, `RIGHT`). It may also store `bold`, `italic`, `underline`, `listStyle` (`BULLET` or `NUMBERED`), `lineSpacing`, and `highlightColor`. Missing width means a legacy auto-width box that only breaks on explicit newlines; new text boxes wrap inside their stored width.
+A text item stores its position, text, color, font size, optional `width` in page units, an optional measured `height`, and an optional `alignment` (`LEFT`, `CENTER`, `RIGHT`). It may also store `bold`, `italic`, `underline`, `listStyle` (`BULLET` or `NUMBERED`), `lineSpacing`, and `highlightColor`. Missing width means a legacy auto-width box that only breaks on explicit newlines; new text boxes wrap inside their stored width, while height is measured at render time.
 
 A sticky note stores its position, size, text, color, and font size. It renders as a colored card above ink and text and is included in PDF export and page sharing.
 
-Saving is debounced while editing, then flushed when the editor closes or the app goes to the background.
+Saving is debounced (550 ms) while editing, then flushed when the editor closes or the app goes to the background.
 
 ## Architecture notes
 
@@ -332,4 +342,8 @@ Or set **Settings → Build, Execution, Deployment → Build Tools → Gradle �
 NoteCraft is released under the [MIT License](LICENSE).
 
 Third-party libraries retain their own licenses, including AndroidX, Jetpack Compose, Jetpack Ink, and Material Icons (Apache License 2.0).
+
+## Credits
+
+- Pen glyph in `pen.svg`: [SVG Repo](https://www.svgrepo.com/), exported with SVG Repo Mixer.
 
