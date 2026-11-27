@@ -105,6 +105,17 @@ Build-failure triage order: read the full error (file + line) → check the most
 `./gradlew clean :app:assembleDebug --offline` → `./gradlew :app:dependencies` for conflicts →
 rerun with `--stacktrace`.
 
+GitHub Actions:
+
+- `.github/workflows/ci.yml` runs the unit tests, builds the debug APK, and uploads it on `main`
+  pushes, pull requests, and manual dispatch.
+- `.github/workflows/release.yml` builds a signed release APK on `v*` tags or manual dispatch,
+  verifies the signature, and publishes a GitHub Release for tags. It expects the
+  `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and
+  `ANDROID_KEY_PASSWORD` repository secrets. A Play developer account and AAB publishing are not
+  configured.
+- CI must not use `--offline`; it resolves dependencies from the network.
+
 - Treat warnings as signal. Do not introduce new compiler or lint warnings; fix warnings you create.
 - If a build or test fails, investigate the failure itself. Do not delete, skip, or weaken a test to
   get green unless the test is provably wrong — and say so explicitly.

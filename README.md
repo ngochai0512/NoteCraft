@@ -166,6 +166,47 @@ sdk.dir=/path/to/Android/sdk
 
 Replace `/path/to/Android/sdk` with your local SDK location.
 
+## CI builds
+
+`.github/workflows/ci.yml` runs on pushes to `main`, pull requests, and manual dispatch. It runs the unit tests, builds the debug APK, and uploads it as a workflow artifact.
+
+CI debug artifacts are debug-signed and intended for testing, not Play distribution. Because GitHub-hosted runners generate a fresh debug signing key, uninstall a previous CI build before installing a newer artifact. For a local installable build, use `./gradlew assembleDebug`; the APK is at `app/build/outputs/apk/debug/app-debug.apk`.
+
+## GitHub releases
+
+`.github/workflows/release.yml` runs when a `v*` tag is pushed or when started manually. It builds a signed release APK, verifies the signature, uploads it as a workflow artifact, and attaches it to the GitHub Release for tag pushes. A Google Play developer account is not needed; a self-signed release keystore is enough.
+
+Create a release keystore once and keep it backed up:
+
+```bash
+keytool -genkeypair -v \
+  -keystore notecraft-release.jks \
+  -alias notecraft \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Add these repository secrets:
+
+- `ANDROID_KEYSTORE_BASE64` — Base64-encoded `notecraft-release.jks`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+Encode the keystore on macOS with:
+
+```bash
+base64 -i notecraft-release.jks | pbcopy
+```
+
+Tag a release with:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The tag supplies `versionName`; `versionCode` defaults to the workflow run number. Manual runs require a version name. Keep the same keystore for future updates, and never commit it. Play Store AAB publishing is not configured.
+
 ## Drawing gestures
 
 | Action | Gesture |

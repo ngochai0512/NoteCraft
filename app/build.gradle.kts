@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
+val versionCodeOverride = providers.gradleProperty("versionCode").orNull?.toIntOrNull()
+val versionNameOverride = providers.gradleProperty("versionName").orNull
+
 android {
     namespace = "com.notecraft"
     compileSdk = 36
@@ -11,12 +15,26 @@ android {
         applicationId = "com.notecraft"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = versionCodeOverride ?: 1
+        versionName = versionNameOverride ?: "1.0"
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
